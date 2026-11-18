@@ -1793,6 +1793,7 @@ void BrowserPage::showContaining(const luciole::Location& location) {
 void BrowserPage::applySettings(const luciole::BrowserSettings& settings, bool force) {
   m_terminal.setCommand(settings.terminalCommand);
   m_launcher.setTerminalCommand(settings.terminalCommand);
+  Style::setCloseButtonsEnabled(settings.showCloseButtons);
   const auto before = m_savedSettings;
   if (!force && before == settings) {
     return;
@@ -2453,6 +2454,7 @@ void BrowserPage::buildScene() {
                        .controlHeight = 24.0F,
                        .variant = ButtonVariant::Ghost,
                        .tooltip = "Close pane (Ctrl+Alt+W)",
+                       .followsCloseButtons = true,
                        .padding = Style::spaceXs,
                        .width = 24.0F,
                        .onClick =

@@ -62,6 +62,7 @@ WorkspaceApplication::WorkspaceApplication(
       m_defaults = m_preferences.settings()->browser;
       // Live-radius bindings update open widgets; controls built afterwards pick it up directly.
       Style::setCornerRadiusScale(static_cast<float>(m_defaults.cornerRadiusScale));
+      Style::setCloseButtonsEnabled(m_defaults.showCloseButtons);
     }
     for (auto& [id, page] : m_pages) {
       (void)id;
@@ -770,7 +771,9 @@ void WorkspaceApplication::pointer(const PointerEvent& event) {
     for (const auto& [tab, button] : host->buttons) {
       if (host->tabScroll->containsScenePoint(x, y)
           && button->containsScenePoint(x, y)
-          && (event.button == BTN_MIDDLE || !host->closeButtons.at(tab).first->containsScenePoint(x, y))
+          && (event.button == BTN_MIDDLE
+              || !host->closeButtons.at(tab).first->visible()
+              || !host->closeButtons.at(tab).first->containsScenePoint(x, y))
           && event.type == PointerEvent::Type::Button
           && event.pressed) {
         if (event.button == BTN_MIDDLE) {
@@ -1492,6 +1495,7 @@ void WorkspaceApplication::rebuildStrip(Host& host, const luciole::TabWindow& wi
              .variant = ButtonVariant::Ghost,
              .customPalette = closeTabPalette(foreground),
              .tooltip = "Close tab",
+             .followsCloseButtons = true,
              .minWidth = 24.0F,
              .maxWidth = 24.0F,
              .padding = 0.0F,

@@ -771,6 +771,31 @@ namespace {
     }
   }
 
+  void testShowCloseButtons() {
+    using Preference = luciole::BrowserPreference;
+    using State = luciole::AtomicWriteState;
+    Fixture fixture;
+    luciole::ConfigService config(fixture.paths());
+    TEST_CHECK(config.reload() && config.settings().browser.showCloseButtons);
+    fixture.write("config.toml", "[browser]\nshow_close_buttons = false\nshow_hidden = true\n");
+    TEST_CHECK(config.reload() && !config.settings().browser.showCloseButtons && config.settings().browser.showHidden);
+    TEST_CHECK(
+        config.saveOverrides(std::array{luciole::OverrideEdit{Preference::ShowCloseButtons, true}}) == State::Durable
+    );
+    const auto loaded = luciole::loadSettings(fixture.paths());
+    TEST_CHECK(loaded && loaded->browser.showCloseButtons && loaded->browser.showHidden);
+    TEST_CHECK(
+        config.saveOverrides(std::array{luciole::OverrideEdit{Preference::ShowCloseButtons, std::nullopt}})
+            == State::Durable
+        && !config.settings().browser.showCloseButtons
+        && !read(fixture.paths().overrides).contains("show_close_buttons")
+    );
+    for (const auto* value : {"0", "'false'", "1.0"}) {
+      fixture.write("config.toml", std::string("[browser]\nshow_close_buttons = ") + value + "\n");
+      TEST_CHECK(!luciole::validateConfigFile(fixture.paths().base).empty());
+    }
+  }
+
   void testAlwaysShowStatusBar() {
     using Preference = luciole::BrowserPreference;
     using State = luciole::AtomicWriteState;
@@ -1258,6 +1283,7 @@ int main() {
     testSidebarVisibility();
     testNetworkVisibility();
     testAlwaysShowTabBar();
+    testShowCloseButtons();
     testAlwaysShowStatusBar();
     testPreviewVisibility();
     testDetailsColumnVisibility();

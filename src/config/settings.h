@@ -29,6 +29,7 @@ namespace luciole {
     bool alwaysShowTabBar = true;
     bool alwaysShowStatusBar = false;
     bool compactMenus = true;
+    bool showCloseButtons = true;
     double backgroundOpacity = 1.0; // 0 (clear) to 1 (opaque) for the window background.
     double cornerRadiusScale = 1.0; // 0 (square) to 2; 1 is the default rounding.
     BrowsePresentation presentation;
@@ -78,6 +79,7 @@ namespace luciole {
     AlwaysShowTabBar,
     AlwaysShowStatusBar,
     CompactMenus,
+    ShowCloseButtons,
     BackgroundOpacity,
     CornerRadiusScale,
     SortBy,
@@ -160,6 +162,7 @@ namespace luciole {
     static constexpr PreferenceKey<bool> AlwaysShowTabBar{Id::AlwaysShowTabBar};
     static constexpr PreferenceKey<bool> AlwaysShowStatusBar{Id::AlwaysShowStatusBar};
     static constexpr PreferenceKey<bool> CompactMenus{Id::CompactMenus};
+    static constexpr PreferenceKey<bool> ShowCloseButtons{Id::ShowCloseButtons};
     static constexpr PreferenceKey<double> BackgroundOpacity{Id::BackgroundOpacity};
     static constexpr PreferenceKey<double> CornerRadiusScale{Id::CornerRadiusScale};
     static constexpr PreferenceKey<luciole::SortField> SortBy{Id::SortBy};
