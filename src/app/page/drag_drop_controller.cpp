@@ -818,7 +818,12 @@ void DragDropController::finishDrag() {
         m_connection.keyboardModifiers(), target->location, fromTrash, remoteSource, m_page.settings().dropAction
     );
     luciole::DropOptions options{
-        .action = action, .canCopy = true, .canMove = true, .select = [](luciole::TransferAction) { return true; }
+        .action = action,
+        .canCopy = true,
+        .canMove = true,
+        .x = m_page.pointerX(),
+        .y = m_page.pointerY(),
+        .select = [](luciole::TransferAction) { return true; }
     };
     m_transferController.receiveDrop({std::move(sources), false}, target->location, std::move(options), [](bool) {});
   } else if (slot) {

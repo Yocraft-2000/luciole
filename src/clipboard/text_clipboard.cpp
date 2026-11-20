@@ -630,8 +630,8 @@ struct luciole::WaylandTextClipboard::State : std::enable_shared_from_this<State
     };
     read(
         offer, kUriListMime.data(), found->second.reading.get(),
-        [self = shared_from_this(), offer, action, modern, prompt, supported, live, receiver = std::move(receiver),
-         failed = std::move(failed)](auto bytes) {
+        [self = shared_from_this(), offer, action, modern, prompt, supported, live, x = dragX, y = dragY,
+         receiver = std::move(receiver), failed = std::move(failed)](auto bytes) {
           if (!live()) {
             return;
           }
@@ -665,6 +665,8 @@ struct luciole::WaylandTextClipboard::State : std::enable_shared_from_this<State
                                       : DragAction::Copy,
               .canCopy = copy,
               .canMove = move,
+              .x = x,
+              .y = y,
               .select = [resolution, live, offer, ask, copy, move](TransferAction selected) {
                 if (!live()
                     || resolution->chosen

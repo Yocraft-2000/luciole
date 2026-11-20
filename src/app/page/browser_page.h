@@ -70,6 +70,7 @@
 #include <array>
 #include <chrono>
 #include <cstdlib>
+#include <functional>
 #include <initializer_list>
 #include <memory>
 #include <string>
@@ -334,6 +335,9 @@ private:
   void showPopup(
       std::unique_ptr<Flex> root, ContextMenuControl* menu, LayoutRect anchor, float width, float height,
       bool alignLeft = false
+  ) override;
+  void showContextMenu(
+      std::vector<ContextMenuControlEntry> entries, std::function<void(int)> action, LayoutRect anchor
   ) override;
   PopupSurface* popupSurface() override;
   InputDispatcher& popupDispatcher() override;

@@ -28,7 +28,6 @@ public:
     QuickPreview,
     Applications,
     TransferConflict,
-    DropAction,
     ArchivePassword,
     Mount,
     RunProgram,

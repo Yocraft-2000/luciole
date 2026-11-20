@@ -30,7 +30,7 @@ Plain single-line Middle text uses the shared renderer's compact layout. Pango s
 
 ## Drop action
 
-`browser.drop_action` accepts `menu` (default), `copy` and `move`. Settings → General → When dropping files uses the typed preference and Select control. [DragDropController](../../src/app/page/drag_drop_controller.cpp) resolves the same value for internal drags, external drop targets and the drag cursor. Ctrl, Shift and Alt keep priority over the preference, and Trash, items from Trash and non-native folders keep their existing fixed behavior. `menu` sets `DragAction::Ask`, so the existing chooser in [TransferController](../../src/app/page/transfer_controller.cpp) offers Copy, Move and Create Link with one shared cancellation path.
+`browser.drop_action` accepts `menu` (default), `copy` and `move`. Settings → General → When dropping files uses the typed preference and Select control. [DragDropController](../../src/app/page/drag_drop_controller.cpp) resolves the same value for internal drags, external drop targets and the drag cursor. Ctrl, Shift and Alt keep priority over the preference, and Trash, items from Trash and non-native folders keep their existing fixed behavior. `menu` sets `DragAction::Ask`, so [TransferController](../../src/app/page/transfer_controller.cpp) shows a drop action context menu anchored at the drop point through [MenuController](../../src/app/page/menu_controller.cpp), offering Copy Here, Move Here and Create Link Here with one shared cancellation path.
 
 ## Atomic writes
 

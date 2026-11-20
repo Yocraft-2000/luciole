@@ -19,6 +19,8 @@ namespace luciole {
   struct DropOptions {
     DragAction action = DragAction::Copy;
     bool canCopy = false, canMove = false;
+    // Drop point in window scene coordinates, used to anchor the action menu.
+    float x = 0.0F, y = 0.0F;
     // Select once before starting work. Link uses the non-destructive Copy wire action.
     std::function<bool(TransferAction)> select;
   };

@@ -2903,6 +2903,12 @@ void BrowserPage::showPopup(
   );
 }
 
+void BrowserPage::showContextMenu(
+    std::vector<ContextMenuControlEntry> entries, std::function<void(int)> action, LayoutRect anchor
+) {
+  m_menuController.showContextMenu(std::move(entries), std::move(action), anchor);
+}
+
 float BrowserPage::dialogWidth(DialogWidth width) const {
   const float tier = width == DialogWidth::Small ? kDialogWidthSmall
       : width == DialogWidth::Medium             ? kDialogWidthMedium

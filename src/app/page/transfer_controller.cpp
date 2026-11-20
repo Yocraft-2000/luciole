@@ -12,6 +12,7 @@
 #include "render/scene/input_dispatcher.h"
 #include "ui/browser/file_error_text.h"
 #include "ui/builders.h"
+#include "ui/controls/context_menu.h"
 #include "ui/dialogs/dialog_chrome.h"
 #include "ui/palette.h"
 #include "ui/style.h"
@@ -25,6 +26,11 @@
 #include <vector>
 
 namespace {
+  constexpr int kDropCopy = 1;
+  constexpr int kDropMove = 2;
+  constexpr int kDropLink = 3;
+  constexpr int kDropCancel = -1;
+
   bool arrived(const luciole::TransferResult& result) {
     return result.outcome == luciole::TransferOutcome::Moved
         || result.outcome == luciole::TransferOutcome::Copied
@@ -257,63 +263,42 @@ void TransferController::chooseDrop(
       std::make_shared<Pending>(std::move(payload), destination, std::move(options), std::move(finish));
   const auto context = m_page.browser().contextSerial();
   const std::weak_ptr<int> lifetime = m_lifetime;
-  const auto choose = [this, lifetime, pending, context](luciole::TransferAction action) {
+  const auto choose = [this, lifetime, pending, context](int id) {
     if (pending->chosen) {
       return;
     }
-    if (lifetime.expired()) {
+    if (id == kDropCancel || lifetime.expired()) {
       pending->cancel();
       return;
     }
+    const auto action = id == kDropCopy ? luciole::TransferAction::Copy
+        : id == kDropMove               ? luciole::TransferAction::Move
+                                        : luciole::TransferAction::Link;
     if (!m_page.visible()
         || m_page.operationsBusy()
         || context != m_page.browser().contextSerial()
         || !pending->options.select
         || !pending->options.select(action)) {
       pending->cancel();
-      m_page.dismissPopup();
       return;
     }
     pending->chosen = true;
-    m_page.dismissPopup();
     resolvedDrop(std::move(pending->payload), pending->destination, action, std::move(pending->finish));
   };
-  auto root = ui::column({.align = FlexAlign::Stretch});
-  luciole::applyDialogStyle(*root);
-  root->addChild(luciole::dialogHeader("Choose Drop Action", "drag-drop", [this] { m_page.dismissPopup(); }));
-  Button* focus = nullptr;
-  const auto add = [&](const char* label, const char* glyph, luciole::TransferAction action, bool enabled) {
-    auto button = ui::button(
-        {.text = label,
-         .glyph = glyph,
-         .contentAlign = ButtonContentAlign::Start,
-         .variant = ButtonVariant::Ghost,
-         .onClick = [choose, action] { choose(action); }}
-    );
-    button->setEnabled(enabled);
-    if (enabled && !focus) {
-      focus = button.get();
-    }
-    root->addChild(std::move(button));
-  };
-  add("Copy Here", "copy", luciole::TransferAction::Copy, pending->options.canCopy);
-  add("Move Here", "arrows-move", luciole::TransferAction::Move, pending->options.canMove);
-  add(pending->payload.locations.size() == 1 ? "Create Link Here" : "Create Links Here", "link",
-      luciole::TransferAction::Link,
-      pending->options.canCopy && std::ranges::all_of(pending->payload.locations, [&](const auto& source) {
-        return luciole::transferLinkTarget(source, destination).has_value();
-      }));
-  root->addChild(ui::separator({}));
-  root->addChild(ui::button({.text = "Cancel", .variant = ButtonVariant::Ghost, .onClick = [this] {
-                               m_page.dismissPopup();
-                             }}));
-  m_page.showDialog(std::move(root), DialogWidth::Small);
-  if (m_page.popupSurface()) {
-    m_page.activePopup().bind(ActivePopup::Kind::DropAction, [pending] { pending->cancel(); });
-    if (focus) {
-      m_page.popupDispatcher().setFocus(focus->inputArea());
-    }
-  }
+  std::vector<ContextMenuControlEntry> entries;
+  entries.push_back({.id = kDropCopy, .label = "Copy Here", .enabled = pending->options.canCopy});
+  entries.push_back({.id = kDropMove, .label = "Move Here", .enabled = pending->options.canMove});
+  entries.push_back({.label = "", .separator = true});
+  entries.push_back(
+      {.id = kDropLink,
+       .label = pending->payload.locations.size() == 1 ? "Create Link Here" : "Create Links Here",
+       .enabled = pending->options.canCopy && std::ranges::all_of(pending->payload.locations, [&](const auto& source) {
+                    return luciole::transferLinkTarget(source, destination).has_value();
+                  })}
+  );
+  entries.push_back({.label = "", .separator = true});
+  entries.push_back({.id = kDropCancel, .label = "Cancel"});
+  m_page.showContextMenu(std::move(entries), choose, {options.x, options.y, 1.0F, 1.0F});
 }
 
 void TransferController::transferChanged(OperationJob& job) {
