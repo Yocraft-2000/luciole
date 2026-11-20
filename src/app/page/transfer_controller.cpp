@@ -286,8 +286,8 @@ void TransferController::chooseDrop(
     resolvedDrop(std::move(pending->payload), pending->destination, action, std::move(pending->finish));
   };
   std::vector<ContextMenuControlEntry> entries;
-  entries.push_back({.id = kDropCopy, .label = "Copy Here", .enabled = pending->options.canCopy});
-  entries.push_back({.id = kDropMove, .label = "Move Here", .enabled = pending->options.canMove});
+  entries.push_back({.id = kDropCopy, .label = "Copy Here", .enabled = pending->options.canCopy, .shortcut = "Ctrl"});
+  entries.push_back({.id = kDropMove, .label = "Move Here", .enabled = pending->options.canMove, .shortcut = "Shift"});
   entries.push_back({.label = "", .separator = true});
   entries.push_back(
       {.id = kDropLink,
@@ -297,7 +297,7 @@ void TransferController::chooseDrop(
                   })}
   );
   entries.push_back({.label = "", .separator = true});
-  entries.push_back({.id = kDropCancel, .label = "Cancel"});
+  entries.push_back({.id = kDropCancel, .label = "Cancel", .shortcut = "Esc"});
   m_page.showContextMenu(std::move(entries), choose, {options.x, options.y, 1.0F, 1.0F});
 }
 
