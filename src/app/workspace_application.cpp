@@ -60,7 +60,7 @@ WorkspaceApplication::WorkspaceApplication(
   m_preferences.setChangedCallback([this](const std::string& error) {
     if (m_preferences.settings()) {
       m_defaults = m_preferences.settings()->browser;
-      // Live-radius bindings update open widgets; controls built afterwards pick it up directly.
+      // Live Style bindings update open widgets; controls built afterwards pick the values up directly.
       Style::setCornerRadiusScale(static_cast<float>(m_defaults.cornerRadiusScale));
       Style::setCloseButtonsEnabled(m_defaults.showCloseButtons);
     }
