@@ -6,7 +6,9 @@
 #include "browser/browser_controller.h"
 #include "browser/location_presentation.h"
 #include "core/ui_phase.h"
+#include "fs/archive_type.h"
 #include "fs/gio_ptr.h"
+#include "operations/archive_service.h"
 #include "operations/trash_item.h"
 #include "platform/desktop_integration.h"
 #include "render/scene/input_dispatcher.h"
@@ -29,6 +31,7 @@ namespace {
   constexpr int kDropCopy = 1;
   constexpr int kDropMove = 2;
   constexpr int kDropLink = 3;
+  constexpr int kDropExtract = 4;
   constexpr int kDropCancel = -1;
 
   bool arrived(const luciole::TransferResult& result) {
@@ -223,6 +226,35 @@ void TransferController::resolvedDrop(
   });
 }
 
+void TransferController::extractedDrop(
+    const luciole::FilePayload& payload, const luciole::Location& destination, const luciole::DropOptions& options,
+    luciole::DropCompletion finish
+) {
+  if (payload.locations.size() != 1
+      || !destination.isNative()
+      || !options.canCopy
+      || !options.select
+      || !luciole::isSupportedArchive(payload.locations.front(), "")) {
+    finish(false);
+    return;
+  }
+  if (!options.select(luciole::TransferAction::Copy)) {
+    finish(false);
+    return;
+  }
+  const auto& source = payload.locations.front();
+  const auto target = destination.child(luciole::archiveFolderName(source));
+  const auto job = m_page.jobs().create<luciole::ArchiveService>();
+  if (!job->service<luciole::ArchiveService>().extract(source, target, {}, nullptr)) {
+    finish(false);
+    return;
+  }
+  job->whenIdle([finish = std::move(finish)](OperationJob& done) {
+    const auto& archives = done.service<luciole::ArchiveService>();
+    finish(!archives.error().has_value() && !archives.results().empty());
+  });
+}
+
 void TransferController::chooseDrop(
     luciole::FilePayload payload, const luciole::Location& destination, luciole::DropOptions options,
     luciole::DropCompletion finish
@@ -271,6 +303,15 @@ void TransferController::chooseDrop(
       pending->cancel();
       return;
     }
+    if (id == kDropExtract) {
+      if (!m_page.visible() || m_page.operationsBusy() || context != m_page.browser().contextSerial()) {
+        pending->cancel();
+        return;
+      }
+      pending->chosen = true;
+      extractedDrop(pending->payload, pending->destination, pending->options, std::move(pending->finish));
+      return;
+    }
     const auto action = id == kDropCopy ? luciole::TransferAction::Copy
         : id == kDropMove               ? luciole::TransferAction::Move
                                         : luciole::TransferAction::Link;
@@ -285,6 +326,10 @@ void TransferController::chooseDrop(
     pending->chosen = true;
     resolvedDrop(std::move(pending->payload), pending->destination, action, std::move(pending->finish));
   };
+  const bool canExtract = pending->payload.locations.size() == 1
+      && destination.isNative()
+      && pending->options.canCopy
+      && luciole::isSupportedArchive(pending->payload.locations.front(), "");
   std::vector<ContextMenuControlEntry> entries;
   entries.push_back({.id = kDropCopy, .label = "Copy Here", .enabled = pending->options.canCopy, .shortcut = "Ctrl"});
   entries.push_back({.id = kDropMove, .label = "Move Here", .enabled = pending->options.canMove, .shortcut = "Shift"});
@@ -296,6 +341,7 @@ void TransferController::chooseDrop(
                     return luciole::transferLinkTarget(source, destination).has_value();
                   })}
   );
+  entries.push_back({.id = kDropExtract, .label = "Extract Here", .enabled = canExtract});
   entries.push_back({.label = "", .separator = true});
   entries.push_back({.id = kDropCancel, .label = "Cancel", .shortcut = "Esc"});
   m_page.showContextMenu(std::move(entries), choose, {pending->options.x, pending->options.y, 1.0F, 1.0F});
