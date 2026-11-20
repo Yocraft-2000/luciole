@@ -28,6 +28,10 @@ Plain single-line Middle text uses the shared renderer's compact layout. Pango s
 
 [BrowserController](../../src/browser/browser_controller.cpp) owns the scope. Recursive queries keep their 175 ms debounce and worker traversal. Local edits project the current DirectorySession listing through DirectoryModel’s folded literal name filter, without starting traversal or re-reading the folder on each keystroke. Session monitor updates remain visible under the filter; refresh, navigation history and duplication retain the scope. Filtering temporarily projects only the root listing when expandable list folders are enabled. Mode changes cancel pending recursive work before publishing the appropriate source. Miller child and ancestor controllers inherit the source scope.
 
+## Drop action
+
+`browser.drop_action` accepts `move` (default), `copy` and `menu`. Settings → General → When dropping files uses the typed preference and Select control. [DragDropController](../../src/app/page/drag_drop_controller.cpp) resolves the same value for internal drags, external drop targets and the drag cursor. Ctrl, Shift and Alt keep priority over the preference, and Trash, items from Trash and non-native folders keep their existing fixed behavior. `menu` sets `DragAction::Ask`, so the existing chooser in [TransferController](../../src/app/page/transfer_controller.cpp) offers Copy, Move and Create Link with one shared cancellation path.
+
 ## Atomic writes
 
 [atomic_file.cpp](../../src/fs/atomic_file.cpp) implements anchored local transactions. Cooperating writers use a persistent advisory lock. Preserve that lock across ordinary cleanup; unlinking it can split writer coordination. New private directories use 0700 and data/temporary/lock files use 0600.

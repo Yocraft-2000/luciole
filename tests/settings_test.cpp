@@ -226,6 +226,36 @@ namespace {
     TEST_CHECK(restarted.reload() && restarted.settings().browser.presentation.filenameTruncation == Mode::Middle);
   }
 
+  void testDropAction() {
+    using Action = luciole::DropAction;
+    using State = luciole::AtomicWriteState;
+    const auto key = luciole::BrowserPreference::DropAction;
+    Fixture fixture;
+    luciole::ConfigService settings(fixture.paths());
+    TEST_CHECK(settings.reload() && settings.settings().browser.dropAction == Action::Move);
+    fixture.write("config.toml", "[browser]\ndrop_action = 'menu'\n");
+    TEST_CHECK(settings.reload() && settings.settings().browser.dropAction == Action::Menu);
+    const std::array copy{luciole::OverrideEdit{key, Action::Copy}};
+    TEST_CHECK(settings.saveOverrides(copy) == State::Durable);
+    luciole::ConfigService restarted(fixture.paths());
+    TEST_CHECK(restarted.reload() && restarted.settings().browser.dropAction == Action::Copy);
+    const auto saved = read(fixture.paths().overrides);
+    TEST_CHECK(saved.contains("drop_action = \"copy\""));
+    const std::array invalid{luciole::OverrideEdit{key, static_cast<Action>(255)}};
+    TEST_CHECK(restarted.saveOverrides(invalid) == State::NotCommitted && read(fixture.paths().overrides) == saved);
+    const std::array reset{luciole::OverrideEdit{key, std::nullopt}};
+    TEST_CHECK(restarted.saveOverrides(reset) == State::Durable);
+    TEST_CHECK(restarted.settings().browser.dropAction == Action::Menu);
+    TEST_CHECK(!read(fixture.paths().overrides).contains("drop_action"));
+    for (const auto* value : {"'ask'", "'copy_here'", "true", "1", "[]"}) {
+      fixture.write("config.toml", std::format("[browser]\ndrop_action = {}\n", value));
+      TEST_CHECK(!luciole::validateConfigFile(fixture.paths().base).empty());
+      TEST_CHECK(!restarted.reload() && restarted.settings().browser.dropAction == Action::Menu);
+    }
+    fixture.write("config.toml", "[browser]\ndrop_action = 'move'\n");
+    TEST_CHECK(restarted.reload() && restarted.settings().browser.dropAction == Action::Move);
+  }
+
   void testPresentationSettings() {
     using P = luciole::BrowserPreference;
     using State = luciole::AtomicWriteState;
@@ -1240,6 +1270,7 @@ int main() {
     testSchemaAndDiagnostics();
     testPresentationSettings();
     testFilenameTruncation();
+    testDropAction();
     testBackupPreference();
     testNewTabPreference();
     testDeletionConfirmationPreference();

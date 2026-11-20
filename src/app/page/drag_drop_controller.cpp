@@ -8,6 +8,7 @@
 #include "browser/browser_controller.h"
 #include "browser/miller_columns.h"
 #include "browser/places.h"
+#include "config/settings.h"
 #include "cursor-shape-v1-client-protocol.h"
 #include "operations/trash_item.h"
 #include "platform/desktop_integration.h"
@@ -27,7 +28,34 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <string>
+
+namespace {
+  luciole::DragAction resolveDropAction(
+      std::uint32_t modifiers, const luciole::Location& destination, bool forcedMove, bool remoteSource,
+      luciole::DropAction preference
+  ) {
+    if (forcedMove || destination == luciole::Location::trash()) {
+      return luciole::DragAction::Move;
+    }
+    if ((modifiers & KeyMod::Alt) != 0) {
+      return luciole::DragAction::Ask;
+    }
+    if ((modifiers & KeyMod::Ctrl) != 0) {
+      return luciole::DragAction::Copy;
+    }
+    if ((modifiers & KeyMod::Shift) != 0) {
+      return luciole::DragAction::Move;
+    }
+    if (!destination.isNative() || remoteSource) {
+      return luciole::DragAction::Copy;
+    }
+    return preference == luciole::DropAction::Menu ? luciole::DragAction::Ask
+        : preference == luciole::DropAction::Copy  ? luciole::DragAction::Copy
+                                                   : luciole::DragAction::Move;
+  }
+} // namespace
 
 DragDropController::DragDropController(
     PageContext& page, WaylandConnection& connection, luciole::PinService& pins, TransferController& transferController,
@@ -268,12 +296,9 @@ luciole::FileDropTarget DragDropController::externalDestination(const luciole::L
               m_page.actionError(std::move(error));
             }
           },
-      .preferred = fromTrash || destination == luciole::Location::trash() ? luciole::DragAction::Move
-          : (m_connection.keyboardModifiers() & KeyMod::Alt) != 0         ? luciole::DragAction::Ask
-          : (m_connection.keyboardModifiers() & KeyMod::Ctrl) != 0        ? luciole::DragAction::Copy
-          : (m_connection.keyboardModifiers() & KeyMod::Shift) != 0       ? luciole::DragAction::Move
-          : !destination.isNative()                                       ? luciole::DragAction::Copy
-                                                                          : luciole::DragAction::Move,
+      .preferred = resolveDropAction(
+          m_connection.keyboardModifiers(), destination, fromTrash, false, m_page.settings().dropAction
+      ),
       .moveOnly = fromTrash || destination == luciole::Location::trash()
   };
 }
@@ -750,22 +775,22 @@ void DragDropController::layout(Renderer& renderer) {
   } else if (slot) {
     m_sidebar.showDropLine(renderer, *slot);
   }
-  const bool copy = m_lastDropTarget
-      && m_lastDropTarget->location != luciole::Location::trash()
-      && !m_drag->entries.front().location.isTrash()
-      && ((m_connection.keyboardModifiers() & KeyMod::Ctrl) != 0
-          || ((m_connection.keyboardModifiers() & KeyMod::Shift) == 0
-              && (!m_lastDropTarget->location.isNative()
-                  || std::ranges::any_of(m_drag->entries, [](const auto& source) {
-                       return !source.location.isNative();
-                     }))));
+  const bool remoteSource =
+      std::ranges::any_of(m_drag->entries, [](const auto& source) { return !source.location.isNative(); });
+  const bool fromTrash = !m_drag->entries.empty() && m_drag->entries.front().location.isTrash();
+  std::optional<luciole::DragAction> action;
+  if (m_lastDropTarget) {
+    action = resolveDropAction(
+        m_connection.keyboardModifiers(), m_lastDropTarget->location, fromTrash, remoteSource,
+        m_page.settings().dropAction
+    );
+  }
   const auto shape = slot
       ? (m_drag->sourcePin ? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_MOVE : WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_COPY)
-      : m_lastDropTarget
-      ? ((m_connection.keyboardModifiers() & KeyMod::Alt) != 0 ? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_CONTEXT_MENU
-             : copy                                            ? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_COPY
-                                                               : WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_MOVE)
-      : WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_NO_DROP;
+      : action ? (*action == luciole::DragAction::Ask        ? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_CONTEXT_MENU
+                      : *action == luciole::DragAction::Copy ? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_COPY
+                                                             : WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_MOVE)
+               : WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_NO_DROP;
   m_connection.extension<luciole::DesktopIntegration>().setCursorShape(m_connection.lastInputSerial(), shape);
 }
 
@@ -775,15 +800,6 @@ void DragDropController::finishDrag() {
   const auto previous = m_lastDropTarget;
   const auto slot = pinDropSlot();
   const auto drag = *m_drag;
-  const bool copy = target
-      && target->location != luciole::Location::trash()
-      && !drag.entries.front().location.isTrash()
-      && ((m_connection.keyboardModifiers() & KeyMod::Ctrl) != 0
-          || ((m_connection.keyboardModifiers() & KeyMod::Shift) == 0
-              && target
-              && (!target->location.isNative() || std::ranges::any_of(drag.entries, [](const auto& source) {
-                   return !source.location.isNative();
-                 }))));
   cancelDrag();
   if (!current) {
     return;
@@ -795,15 +811,14 @@ void DragDropController::finishDrag() {
       sources.push_back(entry.location);
     }
     m_page.setActionMessage({});
-    const bool ask =
-        target->location != luciole::Location::trash() && (m_connection.keyboardModifiers() & KeyMod::Alt) != 0;
+    const bool remoteSource =
+        std::ranges::any_of(drag.entries, [](const auto& source) { return !source.location.isNative(); });
+    const bool fromTrash = !drag.entries.empty() && drag.entries.front().location.isTrash();
+    const auto action = resolveDropAction(
+        m_connection.keyboardModifiers(), target->location, fromTrash, remoteSource, m_page.settings().dropAction
+    );
     luciole::DropOptions options{
-        .action = ask ? luciole::DragAction::Ask
-            : copy    ? luciole::DragAction::Copy
-                      : luciole::DragAction::Move,
-        .canCopy = true,
-        .canMove = true,
-        .select = [](luciole::TransferAction) { return true; }
+        .action = action, .canCopy = true, .canMove = true, .select = [](luciole::TransferAction) { return true; }
     };
     m_transferController.receiveDrop({std::move(sources), false}, target->location, std::move(options), [](bool) {});
   } else if (slot) {

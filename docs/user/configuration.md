@@ -30,6 +30,7 @@ show_preview = true
 preview_width = 320
 activation_mode = "double_click"
 typing_mode = "search"
+drop_action = "move"
 switch_to_new_tab = true
 confirm_permanent_deletion = true
 restore_last_window = false
@@ -79,6 +80,7 @@ All keys below belong in `[browser]`. Dimensions are logical pixels unless state
 | `corner_radius_scale` | `1.0` | Number from `0` (square) to `2` (extra rounded) scaling every corner radius, like Noctalia's setting of the same name. Open windows, menus and dialogs update live |
 | `activation_mode` | `"double_click"` | `"single_click"`, `"double_click"` |
 | `typing_mode` | `"search"` | `"search"` recursively searches filenames; `"filter"` filters names in the current folder only; `"typeahead"` selects names |
+| `drop_action` | `"move"` | Action for a drop without a modifier: `"move"` moves, `"copy"` copies, `"menu"` opens the drop action chooser. Ctrl, Shift and Alt still take priority; Trash, items from Trash and non-native folders keep their fixed behavior |
 | `confirm_permanent_deletion` | `true` | Ask before permanently deleting selected items, including Shift+Delete and selections in Trash; Empty Trash always confirms |
 | `show_permanent_deletion` | `false` | Show Delete Permanently in context menus for items outside Trash; Shift+Delete and Trash actions stay available either way |
 | `switch_to_new_tab` | `true` | Switch when opening a folder in a new tab; disable to keep browsing the current tab |

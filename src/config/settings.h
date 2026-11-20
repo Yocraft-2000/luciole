@@ -19,6 +19,7 @@ namespace luciole {
     SortOptions sort;
     ActivationMode activationMode = ActivationMode::DoubleClick;
     TypingMode typingMode = TypingMode::Search;
+    DropAction dropAction = DropAction::Move;
     bool confirmPermanentDeletion = true;
     bool showPermanentDeletion = false;
     bool switchToNewTab = true;
@@ -69,6 +70,7 @@ namespace luciole {
   enum class BrowserPreferenceId : std::uint8_t {
     ActivationMode,
     TypingMode,
+    DropAction,
     ConfirmPermanentDeletion,
     ShowPermanentDeletion,
     SwitchToNewTab,
@@ -152,6 +154,7 @@ namespace luciole {
     static constexpr PreferenceKey<std::string> TerminalCommand{Id::TerminalCommand};
     static constexpr PreferenceKey<luciole::ActivationMode> ActivationMode{Id::ActivationMode};
     static constexpr PreferenceKey<luciole::TypingMode> TypingMode{Id::TypingMode};
+    static constexpr PreferenceKey<luciole::DropAction> DropAction{Id::DropAction};
     static constexpr PreferenceKey<bool> ConfirmPermanentDeletion{Id::ConfirmPermanentDeletion};
     static constexpr PreferenceKey<bool> ShowPermanentDeletion{Id::ShowPermanentDeletion};
     static constexpr PreferenceKey<bool> SwitchToNewTab{Id::SwitchToNewTab};
@@ -235,7 +238,7 @@ namespace luciole {
     BrowserPreferenceId m_preference;
     std::variant<
         std::monostate, bool, int, double, SortField, ViewMode, ViewDensity, FilenameTruncation, DetailsColumnOrder,
-        ActivationMode, TypingMode, ThumbnailPolicy, std::string>
+        ActivationMode, TypingMode, DropAction, ThumbnailPolicy, std::string>
         m_value;
   };
 

@@ -36,6 +36,7 @@ namespace luciole {
   };
   enum class ActivationMode : std::uint8_t { SingleClick, DoubleClick };
   enum class TypingMode : std::uint8_t { Search, Typeahead, Filter };
+  enum class DropAction : std::uint8_t { Menu, Copy, Move };
   // Complete column allocations, including the gap after their contents. Zero
   // is the automatic Name width; metadata always has an explicit allocation.
   inline constexpr std::size_t kDetailsColumnCount = 9;

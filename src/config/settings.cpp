@@ -37,6 +37,9 @@ namespace {
        {luciole::TypingMode::Typeahead, "typeahead"},
        {luciole::TypingMode::Filter, "filter"}}
   );
+  constexpr auto kDropActions = std::to_array<Named<luciole::DropAction>>(
+      {{luciole::DropAction::Menu, "menu"}, {luciole::DropAction::Copy, "copy"}, {luciole::DropAction::Move, "move"}}
+  );
   constexpr auto kSortFields = std::to_array<Named<luciole::SortField>>(
       {{luciole::SortField::Name, "name"},
        {luciole::SortField::Size, "size"},
@@ -225,6 +228,7 @@ namespace {
           P::ActivationMode, "activation_mode", [](S& s) -> auto& { return s.activationMode; }, {kActivationModes}
       ),
       describe(P::TypingMode, "typing_mode", [](S& s) -> auto& { return s.typingMode; }, {kTypingModes}),
+      describe(P::DropAction, "drop_action", [](S& s) -> auto& { return s.dropAction; }, {kDropActions}),
       describe(
           P::ConfirmPermanentDeletion, "confirm_permanent_deletion",
           [](S& s) -> auto& { return s.confirmPermanentDeletion; }
@@ -592,6 +596,7 @@ template int& luciole::preferenceValue(BrowserSettings&, PreferenceKey<int>);
 template double& luciole::preferenceValue(BrowserSettings&, PreferenceKey<double>);
 template luciole::ActivationMode& luciole::preferenceValue(BrowserSettings&, PreferenceKey<ActivationMode>);
 template luciole::TypingMode& luciole::preferenceValue(BrowserSettings&, PreferenceKey<TypingMode>);
+template luciole::DropAction& luciole::preferenceValue(BrowserSettings&, PreferenceKey<DropAction>);
 template luciole::SortField& luciole::preferenceValue(BrowserSettings&, PreferenceKey<SortField>);
 template luciole::ViewMode& luciole::preferenceValue(BrowserSettings&, PreferenceKey<ViewMode>);
 template luciole::ViewDensity& luciole::preferenceValue(BrowserSettings&, PreferenceKey<ViewDensity>);
@@ -603,6 +608,7 @@ template const int& luciole::preferenceValue(const BrowserSettings&, PreferenceK
 template const double& luciole::preferenceValue(const BrowserSettings&, PreferenceKey<double>);
 template const luciole::ActivationMode& luciole::preferenceValue(const BrowserSettings&, PreferenceKey<ActivationMode>);
 template const luciole::TypingMode& luciole::preferenceValue(const BrowserSettings&, PreferenceKey<TypingMode>);
+template const luciole::DropAction& luciole::preferenceValue(const BrowserSettings&, PreferenceKey<DropAction>);
 template const luciole::SortField& luciole::preferenceValue(const BrowserSettings&, PreferenceKey<SortField>);
 template const luciole::ViewMode& luciole::preferenceValue(const BrowserSettings&, PreferenceKey<ViewMode>);
 template const luciole::ViewDensity& luciole::preferenceValue(const BrowserSettings&, PreferenceKey<ViewDensity>);
