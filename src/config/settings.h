@@ -19,7 +19,7 @@ namespace luciole {
     SortOptions sort;
     ActivationMode activationMode = ActivationMode::DoubleClick;
     TypingMode typingMode = TypingMode::Search;
-    DropAction dropAction = DropAction::Move;
+    DropAction dropAction = DropAction::Menu;
     bool confirmPermanentDeletion = true;
     bool showPermanentDeletion = false;
     bool switchToNewTab = true;
