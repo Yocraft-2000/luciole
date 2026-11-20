@@ -149,6 +149,10 @@ public:
   void focusChanged(InputArea* focused);
   void windowFocusChanged(bool entered);
   bool completeLocationOnTab(std::uint32_t modifiers);
+  bool sidebarKey(const KeyboardEvent& event);
+  bool sidebarOverlays(float x, float y) const;
+  void prepareSidebar(float width);
+  void arrangeSidebar(Renderer& renderer, float top, float height);
   void stampFocusKeys(Node& node);
   void duplicateFrom(BrowserPage& source);
   void open(const luciole::Location& location);
@@ -264,6 +268,7 @@ private:
   MillerView& millerView() override;
   luciole::ViewMode viewMode() const override;
   float gridIconSize() const override;
+  float rowIconSize() const override;
   void captureViewAnchor() override;
   void resetFileView() override;
 
@@ -477,6 +482,7 @@ private:
   Button* m_up = nullptr;
   Button* m_newFolderButton = nullptr;
   Button* m_sortButton = nullptr;
+  Button* m_emptyTrashButton = nullptr;
   bool m_browserDirty = true;
   std::unique_ptr<PopupSurface> m_popupSurface;
   PopupDismiss m_popupDismiss = PopupDismiss::OutsideClick;

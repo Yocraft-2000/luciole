@@ -46,7 +46,7 @@ public:
       LocationBarController& locationBar, ProgramController& programs
   );
 
-  // Shows `entries` on the popup; activating an entry closes the menu and then calls `action` with its id.
+  // Shows `entries` on the popup; activating an entry calls `action` with its id before closing the menu.
   void showContextMenu(
       std::vector<ContextMenuControlEntry> entries, std::function<void(int)> action, LayoutRect anchor,
       bool alignLeft = false, float preferredWidth = 264.0F

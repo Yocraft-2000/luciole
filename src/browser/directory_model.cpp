@@ -248,8 +248,7 @@ bool luciole::DirectoryModel::less(const SortItem& leftItem, const SortItem& rig
   const auto right = rightItem.id;
   const auto& leftPresentation = *leftItem.presentation;
   const auto& rightPresentation = *rightItem.presentation;
-  // Visible entries always precede hidden entries, regardless of field or direction.
-  if (leftItem.hidden != rightItem.hidden) {
+  if (m_sort.hiddenLast && leftItem.hidden != rightItem.hidden) {
     return !leftItem.hidden;
   }
   if (m_sort.directoriesFirst && leftItem.directory != rightItem.directory) {
@@ -404,6 +403,22 @@ void luciole::DirectoryModel::rebuildProjection(bool resort) {
     }
   }
   if (!m_treeParents.empty() || m_preserveRootOrder) {
+    // A match inside a filtered-out folder keeps its ancestors so the tree can still reach it.
+    if (!m_treeParents.empty()) {
+      std::unordered_set<EntryId> present(m_rows.begin(), m_rows.end());
+      std::vector<EntryId> rows;
+      rows.reserve(m_rows.size());
+      for (const auto id : m_rows) {
+        std::vector<EntryId> missing;
+        for (auto parent = treeParent(id); parent && missing.size() < 32 && present.insert(*parent).second;
+             parent = treeParent(*parent)) {
+          missing.push_back(*parent);
+        }
+        rows.insert(rows.end(), missing.rbegin(), missing.rend());
+        rows.push_back(id);
+      }
+      m_rows = std::move(rows);
+    }
     std::unordered_map<EntryId, std::vector<EntryId>> children;
     std::vector<EntryId> roots;
     for (const auto id : m_rows) {

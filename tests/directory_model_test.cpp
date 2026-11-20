@@ -109,6 +109,9 @@ namespace {
     model.applySnapshot(data, {{3, 1}});
     rows(model, {1, 3});
     TEST_CHECK(model.entry(3) == child && model.treeParent(3) == 1);
+    model.setFilter({.text = "文"});
+    rows(model, {1, 3});
+    model.setFilter({});
     TEST_CHECK(model.select(3));
     const auto expanded = model.snapshot();
     model.applySnapshot(snapshot({entry(1, "replacement")}, 3));
@@ -333,11 +336,13 @@ namespace {
     });
     model.applySnapshot(data);
     model.setFilter({.showHidden = true, .text = {}});
-    model.setSort({});
-    rows(model, {2, 1, 4, 3});
-    model.setSort({.descending = true, .directoriesFirst = false});
-    rows(model, {2, 1, 3, 4});
     model.setSort({.field = SortField::Size, .descending = true, .directoriesFirst = false});
+    rows(model, {3, 1, 2, 4});
+    model.setSort({.hiddenLast = true});
+    rows(model, {2, 1, 4, 3});
+    model.setSort({.descending = true, .directoriesFirst = false, .hiddenLast = true});
+    rows(model, {2, 1, 3, 4});
+    model.setSort({.field = SortField::Size, .descending = true, .directoriesFirst = false, .hiddenLast = true});
     rows(model, {1, 2, 3, 4});
     model.setFilter({.showHidden = false, .text = {}});
 

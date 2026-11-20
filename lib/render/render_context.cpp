@@ -32,6 +32,16 @@ namespace {
   constexpr float kSlowRenderOperationDebugMs = 50.0F;
   constexpr float kSlowRenderOperationWarnMs = 1000.0F;
   constexpr float kPaintCullSlack = 16.0F;
+  constexpr float kAxisAlignedEpsilon = 0.0001F;
+
+  bool isAxisAligned(const Mat3& transform) {
+    return std::abs(transform.m[1]) <= kAxisAlignedEpsilon && std::abs(transform.m[3]) <= kAxisAlignedEpsilon;
+  }
+
+  float snapToBufferPixel(float value, float scale) {
+    const float safeScale = std::max(1.0F, scale);
+    return std::round(value * safeScale) / safeScale;
+  }
 
 } // namespace
 
@@ -103,7 +113,6 @@ void RenderContext::initialize(GlSharedContext& shared) {
       paths::libraryAssetPath("fonts/noctalia-tabler.ttf").string(), m_backend.get(), &m_backend->textureManager()
   );
   m_textRenderer.setFontFamily(m_textFontFamily);
-  m_textRenderer.setTextScale(m_textScale);
   m_textRenderer.setBaseDirection(m_textBaseDirRtl);
   ++m_textMetricsGeneration;
   m_graphicsResetPending = false;
@@ -153,14 +162,16 @@ void RenderContext::setTextFontFamily(std::string family) {
   ++m_textMetricsGeneration;
 }
 
+float RenderContext::clampTextScale(float scale) noexcept {
+  return std::isfinite(scale) ? std::clamp(scale, 0.5F, 3.0F) : 1.0F;
+}
+
 void RenderContext::setTextScale(float scale) {
-  scale = std::clamp(scale, 0.5F, 3.0F);
+  scale = clampTextScale(scale);
   if (m_textScale == scale) {
     return;
   }
-  makeCurrentNoSurface();
   m_textScale = scale;
-  m_textRenderer.setTextScale(m_textScale);
   ++m_textMetricsGeneration;
 }
 
@@ -188,6 +199,7 @@ void RenderContext::renderScene(RenderTarget& target, Node* sceneRoot, Node* ove
     return;
   }
   const float renderScale = target.contentScale();
+  m_frameTextScale = target.textScale().value_or(m_textScale);
 
   for (Node* root : {sceneRoot, overlay}) {
     if (root != nullptr && m_gpuResourceGeneration != 0 && root->gpuResourceGeneration() != m_gpuResourceGeneration) {
@@ -376,15 +388,17 @@ void RenderContext::renderNode(
         shadowColor.a *= effectiveOpacity;
         const Mat3 shadowTransform = worldTransform * Mat3::translation(text->shadowOffsetX(), text->shadowOffsetY());
         m_textRenderer.draw(
-            renderScale, sw, sh, 0.0F, 0.0F, text->text(), text->fontSize(), shadowColor, shadowTransform, font,
-            text->maxWidth(), text->maxLines(), text->textAlign(), text->ellipsize(), text->useMarkup()
+            renderScale, sw, sh, 0.0F, 0.0F, text->text(), text->fontSize() * m_frameTextScale, shadowColor,
+            shadowTransform, font, text->maxWidth(), text->maxLines(), text->textAlign(), text->ellipsize(),
+            text->useMarkup(), {bw / sw, bh / sh}
         );
       }
       auto color = text->color();
       color.a *= effectiveOpacity;
       m_textRenderer.draw(
-          renderScale, sw, sh, 0.0F, 0.0F, text->text(), text->fontSize(), color, worldTransform, font,
-          text->maxWidth(), text->maxLines(), text->textAlign(), text->ellipsize(), text->useMarkup()
+          renderScale, sw, sh, 0.0F, 0.0F, text->text(), text->fontSize() * m_frameTextScale, color, worldTransform,
+          font, text->maxWidth(), text->maxLines(), text->textAlign(), text->ellipsize(), text->useMarkup(),
+          {bw / sw, bh / sh}
       );
     }
     break;
@@ -392,6 +406,12 @@ void RenderContext::renderNode(
   case NodeType::Image: {
     const auto* img = static_cast<const ImageNode*>(node);
     if (img->textureId() != 0) {
+      // Rotated or skewed transforms keep their fractional origin; snapping them jumps whole pixels per frame.
+      Mat3 imageTransform = worldTransform;
+      if (isAxisAligned(imageTransform)) {
+        imageTransform.m[6] = snapToBufferPixel(imageTransform.m[6], renderScale);
+        imageTransform.m[7] = snapToBufferPixel(imageTransform.m[7], renderScale);
+      }
       m_backend->drawImage(
           RenderImageDraw{
               .texture = img->textureId(),
@@ -410,7 +430,7 @@ void RenderContext::renderNode(
               .fitMode = static_cast<RenderImageFitMode>(img->fitMode()),
               .textureWidth = static_cast<float>(img->textureWidth()),
               .textureHeight = static_cast<float>(img->textureHeight()),
-              .transform = worldTransform,
+              .transform = imageTransform,
               .scrim = img->scrim(),
           }
       );

@@ -13,6 +13,7 @@ activation_server = custom_target('launch-activation-server-header',
 )
 
 test_table = [
+  {'name': 'adaptive-sidebar', 'deps': [model_dep]},
   {'name': 'ws-discovery', 'deps': [fs_dep], 'env': gio_env, 'wrapper': files('ws_discovery_test.py')},
   {'name': 'input-lifetime', 'deps': [noctalia_ui_dep]},
   {'name': 'window-move-gesture', 'deps': [model_dep]},
@@ -20,6 +21,7 @@ test_table = [
   {'name': 'job-routing', 'deps': [browser_dep]},
   {'name': 'operation-activity', 'deps': [app_jobs_dep, event_loop_dep], 'env': gio_env},
   {'name': 'drive-removal', 'deps': [app_jobs_dep, event_loop_dep], 'env': gio_env},
+  {'name': 'device-mount', 'deps': [browser_dep], 'env': gio_env},
   {'name': 'archive-service', 'deps': [operations_dep, event_loop_dep], 'timeout': 90, 'env': gio_env},
   {'name': 'thumbnail', 'deps': [thumbnails_dep, imaging_dep, event_loop_dep, dependency('libwebp')],
     'timeout': 90, 'env': gio_env},

@@ -111,6 +111,9 @@ WorkspaceApplication::WorkspaceApplication(
               }
             }
           }
+          if (found->second.active && m_pages.at(found->second.active)->sidebarOverlays(x, y)) {
+            return m_pages.at(found->second.active)->externalDrop(x, y, pins);
+          }
           for (const auto pageId : host->mounted) {
             if (m_pages.at(pageId)->contains(x, y)) {
               return m_pages.at(pageId)->externalDrop(x, y, pins);
@@ -559,6 +562,9 @@ void WorkspaceApplication::keyboard(const KeyboardEvent& event) {
       defer(host.id, record->second.active, *command);
       return;
     }
+    if (!page.overlay() && page.sidebarKey(event)) {
+      return;
+    }
     if (!page.overlay() && KeySymbol::isTab(event.sym) && (event.modifiers == 0 || event.modifiers == KeyMod::Shift)) {
       if (page.completeLocationOnTab(event.modifiers)) {
         return;
@@ -679,6 +685,11 @@ void WorkspaceApplication::pointer(const PointerEvent& event) {
     return;
   }
   const auto x = static_cast<float>(event.sx), y = static_cast<float>(event.sy);
+  if (active.sidebarOverlays(x, y)) {
+    host->pointerPage = window.active;
+    active.pointer(event);
+    return;
+  }
   if (host->previewDragWidth) {
     if (event.type == PointerEvent::Type::Motion) {
       host->previewDragWidth = std::clamp(static_cast<int>(std::lround(host->surface.width() - x)), 208, 800);
@@ -1037,6 +1048,10 @@ luciole::TabId WorkspaceApplication::createPage(
       return std::nullopt;
     }
     auto& host = *m_hosts.at(*owner);
+    if (const auto window = m_model.windows().find(*owner);
+        window != m_model.windows().end() && m_pages.at(window->second.active)->sidebarOverlays(x, y)) {
+      return std::nullopt;
+    }
     for (auto other : host.mounted) {
       if (other != id) {
         if (auto target = m_pages.at(other)->foreignTarget(x, y)) {
@@ -1803,8 +1818,9 @@ void WorkspaceApplication::prepare(Host& host) {
   // only by 1px lines; the plane's top-left corner is rounded where it meets the sidebar.
   const float top = stripHeight + kNavigationToolbarHeight;
   const float bodyHeight = std::max(1.0F, height - top - footer);
+  active.prepareSidebar(width);
   const float sidebar = active.sidebarWidth();
-  active.sidebar()->arrange(renderer, {0, top, active.sidebarControlWidth(), bodyHeight});
+  active.arrangeSidebar(renderer, top, bodyHeight);
   const float left = sidebar;
   const float right = width;
   const bool split = visible.size() == 2;

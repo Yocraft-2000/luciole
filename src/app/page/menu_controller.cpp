@@ -619,12 +619,13 @@ void MenuController::showContextMenu(
   const auto activate = [this, action = std::move(action)](const ContextMenuControlEntry& entry) {
     const int id = entry.id;
     const std::weak_ptr<int> lifetime = m_lifetime;
-    m_page.dismissPopup();
+    // The action runs before the close: clipboard actions need the menu's keyboard focus for their serial.
     DeferredCall::callLater([lifetime, action, id] {
       if (!lifetime.expired()) {
         action(id);
       }
     });
+    m_page.dismissPopup();
   };
   control->setOnActivate(activate);
   ScrollView* scroll = nullptr;
@@ -739,7 +740,9 @@ void MenuController::showActionMenu(
   }
   for (const auto action : actions) {
     if (action) {
-      entries.push_back(actionEntry(*action, request, radio && *action != Action::FoldersFirst));
+      entries.push_back(
+          actionEntry(*action, request, radio && *action != Action::FoldersFirst && *action != Action::HiddenLast)
+      );
     } else {
       entries.push_back({.label = "", .separator = true});
     }
@@ -751,6 +754,8 @@ void MenuController::showActionMenu(
         if (!action) {
           return;
         }
+        // Closed first: Back reopens the main menu, and the check below must only see popups the action opened.
+        m_page.closePopup();
         m_page.dispatchAction(*action, request);
         if (!m_page.popupSurface() && *action != Action::Search && *action != Action::EditLocation) {
           m_page.focusFileList();
@@ -764,7 +769,7 @@ void MenuController::openSortMenu(std::optional<LayoutRect> anchor, bool alignLe
   showActionMenu(
       {Action::SortName, Action::SortType, Action::SortSize, Action::SortModified, Action::SortAccessed,
        Action::SortCreated, Action::SortOwner, Action::SortGroup, Action::SortPermissions, Action::SortLocation,
-       std::nullopt, Action::Ascending, Action::Descending, std::nullopt, Action::FoldersFirst},
+       std::nullopt, Action::Ascending, Action::Descending, std::nullopt, Action::FoldersFirst, Action::HiddenLast},
       true, !anchor.has_value(), anchor, alignLeft
   );
 }

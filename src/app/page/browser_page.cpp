@@ -308,6 +308,23 @@ void BrowserPage::jobChanged(OperationJob& job) {
     m_createController.changed(job);
     break;
   }
+  if (job.kind() == JobKind::Trash) {
+    const auto status = job.service<luciole::TrashService>().snapshot().status;
+    if (status == luciole::TrashStatus::Finished
+        || status == luciole::TrashStatus::Error
+        || status == luciole::TrashStatus::Cancelled) {
+      m_sidebar.refreshTrashAvailabilityAfterJob(job.id());
+    }
+  } else if (job.kind() == JobKind::EmptyTrash) {
+    const auto status = job.service<luciole::EmptyTrashService>().snapshot().status;
+    if (status == luciole::EmptyTrashStatus::Finished
+        || status == luciole::EmptyTrashStatus::Error
+        || status == luciole::EmptyTrashStatus::Cancelled) {
+      m_sidebar.refreshTrashAvailabilityAfterJob(job.id());
+    }
+  } else if (job.kind() == JobKind::Restore && !job.service<luciole::RestoreService>().busy()) {
+    m_sidebar.refreshTrashAvailabilityAfterJob(job.id());
+  }
   m_browserDirty = true;
   m_surface->requestUpdate();
 }
@@ -476,6 +493,12 @@ void BrowserPage::focusChanged(InputArea* focused) {
 }
 
 bool BrowserPage::completeLocationOnTab(std::uint32_t modifiers) { return m_locationBar.completeOnTab(modifiers); }
+bool BrowserPage::sidebarKey(const KeyboardEvent& event) { return m_sidebar.key(event); }
+bool BrowserPage::sidebarOverlays(float x, float y) const { return !overlay() && m_sidebar.drawerContains(x, y); }
+void BrowserPage::prepareSidebar(float width) { m_sidebar.prepareWidth(width); }
+void BrowserPage::arrangeSidebar(Renderer& renderer, float top, float height) {
+  m_sidebar.arrange(renderer, top, height);
+}
 
 void BrowserPage::stampFocusKeys(Node& node) {
   if (auto* area = dynamic_cast<InputArea*>(&node); area && area->tabFocusKey().empty()) {
@@ -658,6 +681,7 @@ void BrowserPage::prepare(LayoutRect bounds, bool active, bool roundCorner) {
 }
 
 void BrowserPage::deactivate() {
+  m_sidebar.dismissDrawer();
   m_dragDrop.clearExternalDrop();
   m_previewController.hidePane();
   if (m_root && owns(dispatcher().focusedArea())) {
@@ -812,6 +836,20 @@ void BrowserPage::pointer(const PointerEvent& event) {
     );
   }
   const bool page = input == &dispatcher();
+  if (page && sidebarOverlays(x, y) && !m_dragDrop.dragging()) {
+    if (event.type == PointerEvent::Type::Button && event.pressed && event.button == BTN_MIDDLE && m_workspaceRequest) {
+      (void)openInNewTab(x, y);
+      if (m_sidebar.places().containsScenePoint(x, y)) {
+        return;
+      }
+    }
+    m_dragDrop.trackButton(event);
+    pointerOverlay(*input, event, x, y);
+    if (m_dragDrop.dragging()) {
+      m_dragDrop.updateDrag();
+    }
+    return;
+  }
   if (page
       && event.type == PointerEvent::Type::Button
       && event.pressed
@@ -892,7 +930,7 @@ void BrowserPage::pointer(const PointerEvent& event) {
 }
 
 std::optional<luciole::FileTooltipTarget> BrowserPage::fileTooltipAt(float x, float y) const {
-  if (!m_visible || overlay()) {
+  if (!m_visible || overlay() || m_sidebar.drawerContains(x, y)) {
     return std::nullopt;
   }
   const luciole::BrowserController* controller = &browser();
@@ -936,6 +974,14 @@ std::optional<luciole::FileTooltipTarget> BrowserPage::fileTooltipAt(float x, fl
 }
 
 bool BrowserPage::openInNewTab(float x, float y) {
+  if (sidebarOverlays(x, y)) {
+    if (m_sidebar.visible()) {
+      if (const auto folder = m_sidebar.places().folderAt(x, y)) {
+        m_workspaceRequest(WorkspaceCommand::OpenTab, folder->location);
+      }
+    }
+    return true;
+  }
   const auto command = (m_connection.keyboardModifiers() & KeyMod::Shift) != 0
       ? (m_savedSettings.switchToNewTab ? WorkspaceCommand::NewBackgroundTab : WorkspaceCommand::NewTab)
       : WorkspaceCommand::OpenTab;
@@ -1062,6 +1108,9 @@ void BrowserPage::dispatchPointer(InputDispatcher& input, const PointerEvent& ev
 }
 
 void BrowserPage::keyboard(const KeyboardEvent& event) {
+  if (m_sidebar.key(event)) {
+    return;
+  }
   if (event.pressed) {
     m_popupSerial = m_connection.lastInputSerial();
     m_locationBar.keyPressed();
@@ -1362,6 +1411,7 @@ void BrowserPage::dispatchAction(Action action, const luciole::ActionRequest& re
     }
   }
   if (action == Action::Open) {
+    action = luciole::ActionRegistry::openAction(actionContext(), request);
     Logger("file-launch").debug("Open action dispatch ({} targets)", request.targets.size());
   }
   const auto state = actionState(action, request);
@@ -1433,7 +1483,7 @@ void BrowserPage::runAction(
       {Action::List, [](BrowserPage& page, const Call&) { page.setViewMode(luciole::ViewMode::List); }},
       {Action::Miller, [](BrowserPage& page, const Call&) { page.setViewMode(luciole::ViewMode::Miller); }},
       {Action::ShowHidden, [](BrowserPage& page, const Call&) { page.toggleHidden(); }},
-      {Action::ShowSidebar, [](BrowserPage& page, const Call&) { page.m_sidebar.setVisible(!page.m_sidebar.visible()); }},
+      {Action::ShowSidebar, [](BrowserPage& page, const Call&) { page.m_sidebar.toggle(); }},
       {Action::ShowPreview, [](BrowserPage& page, const Call&) { page.togglePreview(); }},
       {Action::QuickPreview, [](BrowserPage& page, const Call&) { page.m_previewController.showQuickPreview(); }},
       {Action::OpenWith,
@@ -1452,6 +1502,7 @@ void BrowserPage::runAction(
       {Action::Ascending, sort},
       {Action::Descending, sort},
       {Action::FoldersFirst, sort},
+      {Action::HiddenLast, sort},
       {Action::Open, [](BrowserPage& page, const Call& call) { page.openTargets(call.targets); }},
       {Action::ContainingFolder,
        [](BrowserPage& page, const Call& call) { page.showContaining(call.targets.front().location()); }},
@@ -1600,6 +1651,8 @@ void BrowserPage::sortAction(Action action) {
     options.descending = action == Action::Descending;
   } else if (action == Action::FoldersFirst) {
     options.directoriesFirst = !options.directoriesFirst;
+  } else if (action == Action::HiddenLast) {
+    options.hiddenLast = !options.hiddenLast;
   } else if (options.field != field) {
     options.field = field;
     options.descending = false;
@@ -1961,14 +2014,14 @@ float BrowserPage::gridHeight() const {
   const bool context = !browser().searchQuery().empty() || (location && location->isTrash());
   return m_viewMode == luciole::ViewMode::Grid
       ? luciole::gridMetrics(gridIconSize(), m_savedSettings.presentation, context).height
-      : luciole::fileRowHeight(
-            m_savedSettings.presentation, context,
-            m_viewMode == luciole::ViewMode::Miller ? luciole::millerRowIconSize(m_savedSettings.presentation)
-                                                    : luciole::fileRowIconSize(m_listIconSize)
-        );
+      : luciole::fileRowHeight(m_savedSettings.presentation, context, rowIconSize());
 }
 
 float BrowserPage::gridIconSize() const { return static_cast<float>(luciole::kGridIconSizes[m_gridZoom]); }
+float BrowserPage::rowIconSize() const {
+  return m_viewMode == luciole::ViewMode::Miller ? luciole::millerRowIconSize(m_savedSettings.presentation)
+                                                 : luciole::fileRowIconSize(m_listIconSize);
+}
 
 void BrowserPage::changeGridZoom(int requested) {
   const auto zoom =
@@ -2137,7 +2190,10 @@ void BrowserPage::syncBrowser() {
       : sort.field == luciole::SortField::Size ? (sort.descending ? "largest first" : "smallest first")
                                                : (sort.descending ? "Z to A" : "A to Z");
   m_menuButton->setTooltip(
-      std::format("View options: {}, {}{}", field, direction, sort.directoriesFirst ? " · Folders first" : "")
+      std::format(
+          "View options: {}, {}{}{}", field, direction, sort.directoriesFirst ? " · Folders first" : "",
+          sort.hiddenLast ? " · Hidden last" : ""
+      )
   );
   const bool grid = m_viewMode == luciole::ViewMode::Grid;
   m_viewSwitch->setSelectedIndex(grid ? 0 : m_viewMode == luciole::ViewMode::List ? 1 : 2);
@@ -2157,6 +2213,15 @@ void BrowserPage::syncBrowser() {
         + (state.enabled ? "" : "\n" + std::string(state.reason))
     );
   }
+  const bool showEmptyTrash = !choosing() && snapshot.location && snapshot.location->isTrash();
+  m_emptyTrashButton->setVisible(showEmptyTrash);
+  m_emptyTrashButton->setParticipatesInLayout(showEmptyTrash);
+  const auto emptyTrashState = actionState(Action::EmptyTrash, request);
+  const std::string emptyTrashLabel(luciole::ActionRegistry::definition(Action::EmptyTrash).label);
+  m_emptyTrashButton->setEnabled(emptyTrashState.enabled);
+  m_emptyTrashButton->setTooltip(
+      emptyTrashState.enabled ? emptyTrashLabel : emptyTrashLabel + "\n" + std::string(emptyTrashState.reason)
+  );
   m_sidebar.sync(snapshot.location);
   m_statusBar.sync(m_miller.enabled());
   const bool empty = model.rows().empty();
@@ -2540,7 +2605,7 @@ std::unique_ptr<Flex> BrowserPage::buildToolbar() {
   return ui::row(
       {.out = &m_toolbar, .align = FlexAlign::Center, .gap = Style::spaceSm, .padding = Style::spaceSm},
       ui::row(
-          {.align = FlexAlign::Center, .gap = Style::spaceXs},
+          {.align = FlexAlign::Center, .gap = Style::spaceXs}, m_sidebar.buildToggle(),
           ui::button(
               {.out = &m_back,
                .glyph = "arrow-left",
@@ -2578,6 +2643,15 @@ std::unique_ptr<Flex> BrowserPage::buildToolbar() {
                .visible = choosing(),
                .participatesInLayout = choosing(),
                .onClick = [this] { dispatchAction(Action::CreateFolder); }}
+          ),
+          ui::button(
+              {.out = &m_emptyTrashButton,
+               .glyph = "trash-x",
+               .glyphSize = Style::baseGlyphSize,
+               .variant = ButtonVariant::Ghost,
+               .visible = false,
+               .participatesInLayout = false,
+               .onClick = [this] { dispatchAction(Action::EmptyTrash); }}
           ),
           ui::button(
               {.out = &m_sortButton,
@@ -2756,6 +2830,7 @@ InputDispatcher& BrowserPage::dispatcher() { return *m_dispatcher; }
 bool BrowserPage::popupAvailable() { return !m_popupAvailable || m_popupAvailable(); }
 
 void BrowserPage::prepareOverlay() {
+  m_sidebar.dismissDrawer();
   closePopup();
   cancelDrag();
   m_locationBar.clearCompletions();
