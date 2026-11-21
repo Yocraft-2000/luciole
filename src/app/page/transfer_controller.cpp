@@ -326,11 +326,19 @@ void TransferController::moveIntoNewFolder(
     return;
   }
   m_page.activePopup().bind(ActivePopup::Kind::CreateItem, [this] { closeNewFolder(); });
-  m_page.popupDispatcher().setFocus(m_newFolderEditor->input()->inputArea());
-  m_newFolderEditor->input()->selectAll();
   m_newFolder->createJob = m_page.jobs().create<luciole::CreateService>(JobScope::Page);
+  const std::weak_ptr<int> lifetime = m_newFolder->lifetime;
+  const std::weak_ptr<PendingNewFolder> weak = m_newFolder;
+  m_newFolder->createJob->whenIdle([this, lifetime, weak](OperationJob&) {
+    if (!lifetime.expired() && !weak.expired()) {
+      m_newFolderDirty = true;
+    }
+  });
   auto& creator = m_newFolder->createJob->service<luciole::CreateService>();
+  m_newFolder->preparing = true;
+  m_newFolderEditor->setSaving(true);
   if (!creator.prepare(destination, luciole::CreateKind::Folder)) {
+    m_newFolder->preparing = false;
     m_newFolderEditor->setSaving(false);
     m_newFolderEditor->showError("Another creation is still finishing.");
     return;
@@ -339,10 +347,14 @@ void TransferController::moveIntoNewFolder(
 
 void TransferController::submitNewFolder(std::string name) {
   const auto pending = m_newFolder;
-  if (!pending || !pending->createJob || !m_newFolderEditor || pending->chosen) {
+  if (!pending || !pending->createJob || !m_newFolderEditor || pending->chosen || pending->preparing) {
     return;
   }
   auto& creator = pending->createJob->service<luciole::CreateService>();
+  if (!creator.canCreate()) {
+    m_newFolderEditor->showError("The destination is unavailable. Close this dialog and try again.");
+    return;
+  }
   const std::weak_ptr<int> lifetime = pending->lifetime;
   const std::weak_ptr<PendingNewFolder> weak = pending;
   pending->createJob->whenIdle([this, lifetime, weak](OperationJob&) {
@@ -387,6 +399,30 @@ void TransferController::syncNewFolder() {
   }
   const auto& creator = pending->createJob->service<luciole::CreateService>();
   const auto& snapshot = creator.snapshot();
+  if (pending->preparing) {
+    if (snapshot.status == luciole::CreateStatus::Cancelled) {
+      pending->cancel();
+      closeNewFolder();
+      m_page.dismissPopup();
+      return;
+    }
+    if (snapshot.status == luciole::CreateStatus::Ready || snapshot.status == luciole::CreateStatus::Error) {
+      pending->preparing = false;
+      if (m_newFolderEditor) {
+        m_newFolderEditor->setSaving(false);
+        m_newFolderEditor->showError(
+            snapshot.error ? luciole::nameErrorText(*snapshot.error, "Could not prepare the destination.")
+                           : std::string{}
+        );
+        if (m_page.popupSurface()) {
+          m_page.popupDispatcher().setFocus(m_newFolderEditor->input()->inputArea());
+          m_newFolderEditor->input()->selectAll();
+          m_page.popupSurface()->requestLayout();
+        }
+      }
+    }
+    return;
+  }
   const bool created =
       snapshot.status == luciole::CreateStatus::Succeeded || snapshot.status == luciole::CreateStatus::Partial;
   if (!created) {

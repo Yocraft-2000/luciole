@@ -93,6 +93,7 @@ private:
     std::uint32_t context = 0;
     std::weak_ptr<int> lifetime;
     bool chosen = false;
+    bool preparing = false;
     ~PendingNewFolder() {
       if (!chosen) {
         finish(false);
