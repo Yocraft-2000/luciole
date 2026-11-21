@@ -18,6 +18,72 @@ yay -S luciole-git
 
 Optional helpers for video, PDF and archive support and network locations are listed as optional dependencies; see [optional features](#optional-features).
 
+## Fedora
+
+[Terra](https://wiki.fyralabs.com/Terra) provides nightly builds:
+
+```sh
+sudo dnf install luciole-nightly
+```
+
+Alternatively, the [`lemmy/favorites`](https://copr.fedorainfracloud.org/coprs/lemmy/favorites/) COPR repository provides development builds:
+
+```sh
+sudo dnf copr enable lemmy/favorites
+sudo dnf install luciole-git
+```
+
+For Trash and network locations, install `gvfs` and the backends you need, such as `gvfs-smb`; see [optional features](#optional-features).
+
+## Debian and Ubuntu
+
+The NickH APT repository provides Luciole for Debian-based distributions.
+
+### Install the repository signing key
+
+```sh
+wget https://pkg.noctalia.dev/deb/nickh-archive-keyring.deb
+sudo dpkg -i nickh-archive-keyring.deb
+```
+
+### Add the repository
+
+Choose the source matching your distribution:
+
+```sh
+# Debian Trixie
+sudo wget -O /etc/apt/sources.list.d/noctalia-trixie.sources \
+  https://pkg.noctalia.dev/deb/noctalia-trixie.sources
+
+# Debian Sid
+sudo wget -O /etc/apt/sources.list.d/noctalia-unstable.sources \
+  https://pkg.noctalia.dev/deb/noctalia-unstable.sources
+
+# Ubuntu 26.04
+sudo wget -O /etc/apt/sources.list.d/noctalia-resolute.sources \
+  https://pkg.noctalia.dev/deb/noctalia-resolute.sources
+
+# Ubuntu 26.10
+sudo wget -O /etc/apt/sources.list.d/noctalia-stonking.sources \
+  https://pkg.noctalia.dev/deb/noctalia-stonking.sources
+```
+
+### Install Luciole
+
+Choose the command matching your distribution:
+
+```sh
+sudo apt update
+
+# Debian Trixie
+sudo apt install -t trixie-backports luciole
+
+# Debian Sid and Ubuntu 26.04 and 26.10
+sudo apt install luciole
+```
+
+The repository provides `amd64` and `arm64` packages only. For Trash and network locations, install `gvfs` and the backends you need, such as `gvfs-backends`; see [optional features](#optional-features).
+
 ## NixOS
 
 The flake provides a package, NixOS, Home Manager and hjem modules, and a pinned development environment for `x86_64-linux` and `aarch64-linux`. Enable the `nix-command` and `flakes` experimental features in your Nix configuration before using the commands below.
@@ -136,6 +202,29 @@ With hjem already configured, add Luciole's module to `hjem.extraModules` in you
 Replace `your-user` with your username, then rebuild NixOS.
 
 Both home modules accept `settings` as an attribute set, a TOML string or a path to a TOML file, and validate it at build time by default. Omitting `settings` leaves `config.toml` untouched. The declarative base lives in `~/.config/luciole/config.toml`; GUI changes remain writable in `settings.toml` and take precedence. Reset a preference in Settings to use its declarative value again. See [configuration](configuration.md#files-and-precedence).
+
+### Binary cache
+
+Pre-built binaries for Luciole are available on [Cachix](https://app.cachix.org/cache/noctalia). Add the cache to the NixOS configuration to avoid compiling them locally:
+
+> **Note:** To use the binary cache, omit `inputs.nixpkgs.follows` from the Luciole input. Overriding any of Luciole's inputs changes the derivation hash, causing cache misses.
+
+```nix
+{
+  nix.settings = {
+    extra-substituters = [ "https://noctalia.cachix.org" ];
+    extra-trusted-public-keys = [ "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=" ];
+  };
+}
+```
+
+Tracking `main` directly may pull in a commit that CI hasn't cached yet. The [`cachix`](https://github.com/noctalia-dev/luciole/tree/cachix) branch always points to the latest cached commit, so pinning to it avoids cache misses:
+
+```nix
+{
+  inputs.luciole.url = "github:noctalia-dev/luciole/cachix";
+}
+```
 
 ### Updates and development
 
