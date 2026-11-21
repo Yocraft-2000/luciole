@@ -11,7 +11,9 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace luciole {
@@ -19,6 +21,7 @@ namespace luciole {
 } // namespace luciole
 
 class Button;
+class NameDialog;
 class OperationJob;
 class PageContext;
 
@@ -54,6 +57,8 @@ public:
   );
   // Transfer job change: reports the outcome once the job finishes.
   void transferChanged(OperationJob& job);
+  // Frame slot in BrowserPage::prepareFrame(): finishes the folder creation started by a drop menu action.
+  void onFrame();
   // Shows the oldest pending restore, archive or transfer conflict, or closes the dialog once it is resolved.
   // Frame slot in BrowserPage::prepareFrame() and pumpJobs().
   void syncConflict();
@@ -71,6 +76,33 @@ private:
   struct ActiveConflict {
     std::uint64_t job = 0;
     std::uint64_t conflict = 0;
+  };
+  struct PendingNewFolder {
+    PendingNewFolder(
+        luciole::FilePayload files, luciole::Location where, luciole::DropOptions drop, luciole::DropCompletion done,
+        std::uint32_t serial, std::weak_ptr<int> life
+    )
+        : payload(std::move(files)), destination(std::move(where)), options(std::move(drop)), finish(std::move(done)),
+          context(serial), lifetime(std::move(life)) {}
+    luciole::FilePayload payload;
+    luciole::Location destination;
+    luciole::DropOptions options;
+    luciole::DropCompletion finish;
+    std::shared_ptr<OperationJob> createJob = nullptr;
+    std::uint32_t context = 0;
+    std::weak_ptr<int> lifetime;
+    bool chosen = false;
+    ~PendingNewFolder() {
+      if (!chosen) {
+        finish(false);
+      }
+    }
+    void cancel() {
+      if (!chosen) {
+        chosen = true;
+        finish(false);
+      }
+    }
   };
 
   // Pastes into `destination` once the clipboard answers and `request` is still current for `scope`.
@@ -91,6 +123,13 @@ private:
       const luciole::FilePayload& payload, const luciole::Location& destination, const luciole::DropOptions& options,
       luciole::DropCompletion finish
   );
+  void moveIntoNewFolder(
+      luciole::FilePayload payload, const luciole::Location& destination, luciole::DropOptions options,
+      luciole::DropCompletion finish
+  );
+  void submitNewFolder(std::string name);
+  void closeNewFolder();
+  void syncNewFolder();
   void trashDrop(luciole::FilePayload payload, const luciole::DropOptions& options, luciole::DropCompletion finish);
   void finishMove(OperationJob& job, luciole::ClipboardFiles selection);
 
@@ -99,6 +138,9 @@ private:
   Timer m_operationProgress;
   bool m_pendingFilePaste = false;
   luciole::ExtractionLauncher m_extraction;
+  std::shared_ptr<PendingNewFolder> m_newFolder;
+  NameDialog* m_newFolderEditor = nullptr;
+  bool m_newFolderDirty = false;
   std::optional<ActiveConflict> m_activeConflict;
   std::shared_ptr<int> m_lifetime = std::make_shared<int>(0);
 };
