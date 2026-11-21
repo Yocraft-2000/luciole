@@ -519,8 +519,19 @@ void WorkspaceApplication::keyboard(const KeyboardEvent& event) {
       host->surface.requestUpdate();
     }
   }
-  // Quit is handled before popup routing.
-  if (event.pressed && !event.preedit) {
+  const BrowserPage* focusedPage = nullptr;
+  if (const auto focusedHost = m_hosts.find(m_focused); focusedHost != m_hosts.end() && !focusedHost->second->closed) {
+    const auto record = m_model.windows().find(focusedHost->second->id);
+    if (record != m_model.windows().end()) {
+      const auto pageIt = m_pages.find(record->second.active);
+      if (pageIt != m_pages.end()) {
+        focusedPage = pageIt->second.get();
+      }
+    }
+  }
+  const bool capturingPopup = focusedPage != nullptr && focusedPage->popupCapturesAllKeys();
+  // Quit is handled before popup routing, unless a popup captures every key.
+  if (event.pressed && !event.preedit && !capturingPopup) {
     if (const auto focused = m_hosts.find(m_focused); focused != m_hosts.end()
         && !focused->second->closed
         && !focused->second->chooser

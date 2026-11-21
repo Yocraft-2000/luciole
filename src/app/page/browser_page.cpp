@@ -575,6 +575,11 @@ bool BrowserPage::popupOwns(wl_surface* surface) const {
       || m_dialogDropdown.owns(surface);
 }
 
+bool BrowserPage::popupCapturesAllKeys() const {
+  const InputArea* focused = m_popupDispatcher.focusedArea();
+  return focused != nullptr && focused->capturesAllKeys();
+}
+
 bool BrowserPage::popup() const { return m_popupSurface != nullptr; }
 
 // Modal dialogs and quick preview dim the window; menus, popovers and other outside-click dialogs leave it undimmed.

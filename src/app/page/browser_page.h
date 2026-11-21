@@ -164,6 +164,7 @@ public:
   void setPopupAvailable(std::function<bool()> callback);
   void setForeignDrop(std::function<std::optional<std::pair<luciole::Location, LayoutRect>>(float, float)> callback);
   bool popupOwns(wl_surface* surface) const;
+  bool popupCapturesAllKeys() const;
   bool popup() const;
   bool dimsWindow() const;
   bool overlay() const override;
