@@ -154,6 +154,7 @@ int luciole::runApplication(const std::optional<std::string>& initialLocation, S
     }
     luciole::initializeLibrary();
     Style::setCornerRadiusScale(static_cast<float>(config.settings().browser.cornerRadiusScale));
+    Style::setCloseButtonsEnabled(config.settings().browser.showCloseButtons);
     GlibPollSource glib;
     TextInputService textInput;
     WaylandConnection connection;

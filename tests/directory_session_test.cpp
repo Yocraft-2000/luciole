@@ -109,6 +109,19 @@ namespace {
     return false;
   }
 
+  // The icon GIO's local backend gives the item at path, without following a link.
+  luciole::FileIconSource gioIcon(const luciole::Location& location) {
+    const auto file = luciole::gioFile(location);
+    const luciole::GioPtr<GFileInfo> info(g_file_query_info(
+        file.get(),
+        G_FILE_ATTRIBUTE_STANDARD_NAME "," G_FILE_ATTRIBUTE_STANDARD_TYPE "," G_FILE_ATTRIBUTE_STANDARD_ICON
+                                       "," G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
+        G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS, nullptr, nullptr
+    ));
+    TEST_CHECK(info);
+    return luciole::readFileIcon(info.get(), location);
+  }
+
   // Ready, with sniffed content types published.
   void
   ready(Pump& pump, const DirectorySession& session, std::source_location caller = std::source_location::current()) {
@@ -170,16 +183,12 @@ namespace {
       session.open(Location::fromPath(folder.native()));
       ready(pump, session);
       for (const auto& entry : session.snapshot().entries) {
+        // Links show their target's icon once the icon pass runs; testCustomIcons() checks them.
+        if (entry.symlink) {
+          continue;
+        }
         const auto location = entry.location();
-        const auto file = luciole::gioFile(location);
-        const luciole::GioPtr<GFileInfo> info(g_file_query_info(
-            file.get(),
-            G_FILE_ATTRIBUTE_STANDARD_NAME "," G_FILE_ATTRIBUTE_STANDARD_TYPE "," G_FILE_ATTRIBUTE_STANDARD_ICON
-                                           "," G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
-            G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS, nullptr, nullptr
-        ));
-        TEST_CHECK(info);
-        const auto expected = luciole::readFileIcon(info.get(), location);
+        const auto expected = gioIcon(location);
         TEST_CHECK(entry.icon && *entry.icon == expected);
         special += expected.names.front().starts_with("user-") || expected.names.front().starts_with("folder-");
         TEST_CHECK(Location::fromUri(location.uri()) == location);
@@ -191,6 +200,124 @@ namespace {
     TEST_CHECK(entry(session, "notes.txt").icon == entry(session, "more.txt").icon);
     TEST_CHECK(entry(session, "notes.txt").icon != entry(session, "ordinary").icon);
     TEST_CHECK(entry(session, "launcher.desktop").icon->desktopFile == (home / "launcher.desktop").native());
+    session.open(Location::fromPath(profile.native()));
+    ready(pump, session);
+    pump.until([&] { return linksToDirectory(session, "docs-link"); });
+    TEST_CHECK(*entry(session, "docs-link").icon == gioIcon(Location::fromPath((home / "ordinary").native())));
+  }
+
+  // The icon's first themed name, or its image path.
+  std::string iconName(const DirectorySession& session, const std::string& name) {
+    const auto& icon = entry(session, name).icon;
+    if (!icon) {
+      return {};
+    }
+    return icon->filePath.empty() ? icon->names.front() : icon->filePath;
+  }
+
+  // Folders show their .directory Icon=, links their target's icon; both follow changes after a refresh, in plain
+  // listings and in catalogues, whose rows take the icon with their facts.
+  void testCustomIcons(Pump& pump, bool catalogue) {
+    const Fixture fixture;
+    for (const auto* folder : {"themed", "image", "relative", "plain"}) {
+      fs::create_directory(fixture.path / folder);
+    }
+    fixture.write("themed/.directory", "[Desktop Entry]\nIcon=folder-cloud\n");
+    fixture.write("image/.directory", "[Desktop Entry]\nIcon=/usr/share/pixmaps/cloud.png\n");
+    fixture.write("relative/.directory", "[Desktop Entry]\nIcon=icons/cloud.png\n");
+    fixture.write("notes.txt", "text");
+    fs::create_symlink("notes.txt", fixture.path / "file-link");
+    fs::create_directory_symlink("themed", fixture.path / "folder-link");
+    fs::create_directory_symlink("plain", fixture.path / "plain-link");
+    fs::create_symlink("missing", fixture.path / "broken");
+    if (catalogue) {
+      for (int i = 0; i < 600; ++i) {
+        fixture.write(std::format("filler{}", i), "");
+      }
+    }
+    DirectorySession session;
+    session.setCatalogueEnabled(catalogue);
+    session.open(fixture.location());
+    ready(pump, session);
+    TEST_CHECK(session.snapshot().entries.isCatalogue() == catalogue);
+    const auto known = [&] {
+      const auto& entries = session.snapshot().entries;
+      bool all = true;
+      for (std::size_t i = 0; i < entries.size(); ++i) {
+        const auto name = entries.brief(i).name;
+        if (!name.starts_with("filler") && !entries.known(i)) {
+          session.requestMetadata(i, entries.brief(i).id, luciole::EntryDetails::All);
+          all = false;
+        }
+      }
+      return all;
+    };
+    pump.until([&] { return known() && iconName(session, "themed") == "folder-cloud"; });
+    pump.until([&] { return known() && iconName(session, "file-link") == iconName(session, "notes.txt"); });
+    TEST_CHECK(entry(session, "themed").icon->names == (std::vector<std::string>{"folder-cloud", "folder"}));
+    TEST_CHECK(iconName(session, "image") == "/usr/share/pixmaps/cloud.png");
+    // A relative Icon= path is refused, so that folder keeps the plain folder icon.
+    TEST_CHECK(iconName(session, "relative") == iconName(session, "plain"));
+    // A link to a folder takes that folder's own icon; a dangling link keeps the link icon.
+    TEST_CHECK(iconName(session, "folder-link") == "folder-cloud");
+    TEST_CHECK(iconName(session, "plain-link") == iconName(session, "plain"));
+    TEST_CHECK(iconName(session, "broken") == "inode-symlink");
+    // Removing the .directory restores the folder icon once the folder is listed again.
+    fs::remove(fixture.path / "themed/.directory");
+    session.refresh();
+    pump.until([&] { return known() && iconName(session, "themed") == iconName(session, "plain"); });
+    pump.until([&] { return known() && iconName(session, "folder-link") == iconName(session, "plain"); });
+  }
+
+  // A folder with many subfolders reads their icons in slices; folders and the links after them all get theirs.
+  void testIconPassSlices(Pump& pump) {
+    const Fixture fixture;
+    for (int i = 0; i < 12000; ++i) {
+      fs::create_directory(fixture.path / std::format("dir{:05}", i));
+    }
+    fs::create_directory(fixture.path / "zz-last");
+    fixture.write("zz-last/.directory", "[Desktop Entry]\nIcon=folder-cloud\n");
+    fs::create_directory_symlink("zz-last", fixture.path / "aa-link");
+    DirectorySession session;
+    session.setCatalogueEnabled(true);
+    session.open(fixture.location());
+    ready(pump, session);
+    TEST_CHECK(session.snapshot().entries.isCatalogue());
+    std::size_t last = 0, link = 0;
+    for (std::size_t i = 0; i < session.snapshot().entries.size(); ++i) {
+      const auto name = session.snapshot().entries.brief(i).name;
+      last = name == "zz-last" ? i : last;
+      link = name == "aa-link" ? i : link;
+    }
+    const auto icon = [&](std::size_t index) -> std::string {
+      const auto& entries = session.snapshot().entries;
+      if (const auto* known = entries.known(index); known && known->icon) {
+        return known->icon->names.front();
+      }
+      session.requestMetadata(index, entries.brief(index).id, luciole::EntryDetails::All);
+      return {};
+    };
+    pump.until([&] { return icon(last) == "folder-cloud" && icon(link) == "folder-cloud"; });
+  }
+
+  // A name whose folder is replaced by a file loses the folder's icon, even when no folder or link is left to read.
+  void testIconsDropWithFolder(Pump& pump) {
+    const Fixture fixture;
+    fs::create_directory(fixture.path / "x");
+    fixture.write("x/.directory", "[Desktop Entry]\nIcon=folder-cloud\n");
+    fixture.write("notes.txt", "text");
+    DirectorySession session;
+    session.open(fixture.location());
+    ready(pump, session);
+    pump.until([&] { return iconName(session, "x") == "folder-cloud"; });
+    fs::remove_all(fixture.path / "x");
+    fixture.write("x", "text");
+    session.refresh();
+    pump.until([&] {
+      return hasEntry(session, "x")
+          && entry(session, "x").type == luciole::FileType::Regular
+          && iconName(session, "x") == iconName(session, "notes.txt");
+    });
   }
 
   void testContentTypes(Pump& pump) {
@@ -656,7 +783,8 @@ namespace {
     TEST_CHECK(entry.details == luciole::readEntryMetadata(info.get()));
     TEST_CHECK(entry.identity() == luciole::readFileIdentity(info.get()));
     TEST_CHECK(entry.contentType == luciole::readContentType(info.get()));
-    TEST_CHECK(entry.icon && *entry.icon == luciole::readFileIcon(info.get(), location));
+    // A link shows its target's icon instead, from the icon pass; see testCustomIcons().
+    TEST_CHECK(entry.symlink || (entry.icon && *entry.icon == luciole::readFileIcon(info.get(), location)));
     const auto expected = luciole::readFileAccess(info.get());
     TEST_CHECK(entry.access.rename == expected.rename);
     TEST_CHECK(entry.access.remove == expected.remove);
@@ -700,6 +828,11 @@ namespace {
         pump.until([&] { return linksToDirectory(session, "folder-link"); });
         TEST_CHECK(!entry(session, "link").linksToDirectory && !entry(session, "broken").linksToDirectory);
         TEST_CHECK(!entry(session, "locked").linksToDirectory);
+        // A link to a folder shows the plain folder icon, a link to a file its target's icon; a broken link keeps
+        // the link icon.
+        pump.until([&] { return *entry(session, "link").icon == *entry(session, "regular.txt").icon; });
+        TEST_CHECK(*entry(session, "folder-link").icon == *entry(session, "locked").icon);
+        TEST_CHECK(*entry(session, "broken").icon == gioIcon(entry(session, "broken").location()));
       }
     }
     // Root can retain write access after chmod, including in the CI container.
@@ -790,6 +923,7 @@ namespace {
     const auto rich = session.snapshot().entries;
     // GIO details never report a link's target, so they keep the catalogue's.
     TEST_CHECK(rich.known(folderLinkIndex)->linksToDirectory);
+    TEST_CHECK(*rich.known(folderLinkIndex)->icon == gioIcon(fixture.location().child("folder")));
     TEST_CHECK(rich.sameCatalogue(initial) && pending.metadataPending && !initial.known(pictureIndex));
     const auto& picture = *rich.known(pictureIndex);
     TEST_CHECK(!picture.metadataPending && !picture.metadataFailed && picture.contentType == "image/png");
@@ -970,11 +1104,14 @@ namespace {
     TEST_CHECK(session.snapshot().status == DirectoryStatus::Loading);
     ready(pump, session);
     TEST_CHECK(linksToDirectory(session, "folder-link"));
+    TEST_CHECK(*entry(session, "folder-link").icon == *entry(session, "folder").icon);
     fs::remove(fixture.path / "folder-link");
     fs::create_symlink("file", fixture.path / "folder-link");
     session.refresh();
     ready(pump, session);
+    // The link pass sets the target kind and the target's icon together.
     pump.until([&] { return !linksToDirectory(session, "folder-link"); });
+    TEST_CHECK(*entry(session, "folder-link").icon == *entry(session, "file").icon);
   }
 
   void testNetworkFilesystem() {
@@ -1015,6 +1152,10 @@ int main() {
     Pump pump;
     testLocalIconsAndLocations(pump, profile.path);
     testContentTypes(pump);
+    testCustomIcons(pump, false);
+    testCustomIcons(pump, true);
+    testIconPassSlices(pump);
+    testIconsDropWithFolder(pump);
     testEnumerationAndMonitoring(pump);
     testSearchSnapshotOwnership(pump);
     testGenerationAndLifetime(pump);
