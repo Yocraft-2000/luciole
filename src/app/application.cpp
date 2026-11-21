@@ -19,6 +19,7 @@
 #include "fs/gio_ptr.h"
 #include "platform/desktop_integration.h"
 #include "platform/file_chooser_portal.h"
+#include "render/animation/motion_service.h"
 #include "render/gl_shared_context.h"
 #include "render/render_context.h"
 #include "render/scene/input_dispatcher.h"
@@ -154,6 +155,8 @@ int luciole::runApplication(const std::optional<std::string>& initialLocation, S
     }
     luciole::initializeLibrary();
     Style::setCornerRadiusScale(static_cast<float>(config.settings().browser.cornerRadiusScale));
+    Style::setCloseButtonsEnabled(config.settings().browser.showCloseButtons);
+    MotionService::instance().setEnabled(!config.settings().browser.reduceAnimations);
     GlibPollSource glib;
     TextInputService textInput;
     WaylandConnection connection;

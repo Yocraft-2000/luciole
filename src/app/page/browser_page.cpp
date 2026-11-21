@@ -16,7 +16,9 @@
 #include "core/timer_manager.h"
 #include "core/ui_phase.h"
 #include "cursor-shape-v1-client-protocol.h"
+#include "fs/background_job.h"
 #include "fs/gio_ptr.h"
+#include "fs/link_target.h"
 #include "model/details_columns.h"
 #include "operations/archive_service.h"
 #include "operations/batch_rename_service.h"
@@ -109,6 +111,7 @@ BrowserPage::BrowserPage(
   );
   browser().setViewDefaults(settings.viewMode, settings.gridIconSize);
   m_listIconSize = settings.listIconSize;
+  m_millerIconSize = settings.millerIconSize;
   m_preview.setChangedCallback([this] {
     m_surface->requestLayout();
     if (m_popupSurface) {
@@ -145,6 +148,9 @@ BrowserPage::BrowserPage(
     m_surface->requestUpdate();
   });
   m_browser.setFileActivatedCallback([this](const luciole::Location& location) { m_launcher.open(location); });
+  m_folderIconController.setOnChanged([this](const luciole::Location& folder) {
+    m_propertiesController.refreshFolderIcon(folder);
+  });
   m_miller.defaultWidth = settings.millerColumnWidth;
   m_miller.setChangedCallback([this] {
     m_browserDirty = true;
@@ -402,6 +408,7 @@ luciole::BrowserSettings BrowserPage::options() const {
   value.viewMode = m_viewMode;
   value.gridIconSize = static_cast<int>(gridIconSize());
   value.listIconSize = m_listIconSize;
+  value.millerIconSize = m_millerIconSize;
   value.columns = m_detailsHeader.columnVisibility();
   value.columnOrder = m_detailsHeader.columnOrder();
   value.columnWidths = m_detailsHeader.columnWidths();
@@ -1141,6 +1148,9 @@ void BrowserPage::keyboard(const KeyboardEvent& event) {
     if (m_dialogDropdown.key(event)) {
       return;
     }
+    if (m_folderIconController.escapeKey(event)) {
+      return;
+    }
     if (m_settingsController.key(event)) {
       return;
     }
@@ -1359,6 +1369,7 @@ luciole::ActionContext BrowserPage::actionContext() const {
       .showPreview = previewEnabled(),
       .clipboardAvailable = m_clipboard.available(),
       .clipboardHasFiles = m_clipboard.hasFiles(),
+      .clipboardHasImage = m_clipboard.hasImage(),
       .terminalAvailable = m_terminal.available(),
       .canUndo = m_hub.canUndo(),
       .canRedo = m_hub.canRedo(),
@@ -1508,6 +1519,8 @@ void BrowserPage::runAction(
        [](BrowserPage& page, const Call& call) { page.showContaining(call.targets.front().location()); }},
       {Action::OriginalLocation,
        [](BrowserPage& page, const Call& call) { page.showContaining(*call.targets.front().trashInfo().original); }},
+      {Action::ShowLinkTarget,
+       [](BrowserPage& page, const Call& call) { page.showLinkTarget(call.targets.front().location()); }},
       {Action::Pin, [](BrowserPage& page, const Call& call) { page.pinTargets(call.targets); }},
       {Action::Unpin, [](BrowserPage& page, const Call& call) { page.unpinTargets(call.targets); }},
       {Action::CutFiles, fileClipboard},
@@ -1716,7 +1729,7 @@ void BrowserPage::unpinTargets(const std::vector<luciole::DirectoryEntry>& targe
 
 void BrowserPage::openPatternSelection(const luciole::ActionRequest& request) {
   auto editor = std::make_unique<NameDialog>(
-      dialogWidth(DialogWidth::Small), "Select by pattern", "cursor-text", m_selectionPattern,
+      dialogWidth(DialogWidth::Small), "Select by Pattern", "cursor-text", m_selectionPattern,
       "Use * for any text and ? for one character. Matches visible names, ignoring case.",
       luciole::selectionPatternProblem,
       [this, request](std::string pattern) {
@@ -1843,6 +1856,25 @@ void BrowserPage::showContaining(const luciole::Location& location) {
   revealItems({location}, false);
 }
 
+void BrowserPage::showLinkTarget(const luciole::Location& link) {
+  const auto context = browser().contextSerial();
+  const std::weak_ptr<int> lifetime = m_lifetime;
+  luciole::runJob<luciole::Location>(
+      [link] { return luciole::linkTarget(link); },
+      [this, lifetime, context](luciole::JobResult<luciole::Location> result) {
+        // Navigating away meanwhile cancels the jump.
+        if (lifetime.expired() || context != browser().contextSerial()) {
+          return;
+        }
+        if (result) {
+          showContaining(*result);
+        } else {
+          actionError(result.error().message);
+        }
+      }
+  );
+}
+
 void BrowserPage::applySettings(const luciole::BrowserSettings& settings, bool force) {
   m_terminal.setCommand(settings.terminalCommand);
   m_launcher.setTerminalCommand(settings.terminalCommand);
@@ -1873,6 +1905,10 @@ void BrowserPage::applySettings(const luciole::BrowserSettings& settings, bool f
   }
   if (m_settingsController.open() && (force || before.listIconSize != settings.listIconSize)) {
     m_listIconSize = settings.listIconSize;
+    m_zoomScroll = 0;
+  }
+  if (m_settingsController.open() && (force || before.millerIconSize != settings.millerIconSize)) {
+    m_millerIconSize = settings.millerIconSize;
     m_zoomScroll = 0;
   }
   if (m_settingsController.open() && (force || before.sort != settings.sort)) {
@@ -2018,8 +2054,9 @@ float BrowserPage::gridHeight() const {
 
 float BrowserPage::gridIconSize() const { return static_cast<float>(luciole::kGridIconSizes[m_gridZoom]); }
 float BrowserPage::rowIconSize() const {
-  return m_viewMode == luciole::ViewMode::Miller ? luciole::millerRowIconSize(m_savedSettings.presentation)
-                                                 : luciole::fileRowIconSize(m_listIconSize);
+  return m_viewMode == luciole::ViewMode::Miller
+      ? luciole::millerRowIconSize(m_savedSettings.presentation, m_millerIconSize)
+      : luciole::fileRowIconSize(m_listIconSize);
 }
 
 void BrowserPage::changeGridZoom(int requested) {
@@ -2038,15 +2075,20 @@ void BrowserPage::changeGridZoom(int requested) {
   m_surface->requestUpdate();
 }
 
-void BrowserPage::changeListIconSize(int size) {
-  if (size == m_listIconSize) {
+void BrowserPage::changeRowIconSize(int size) {
+  if (size == (m_viewMode == luciole::ViewMode::Miller ? m_millerIconSize : m_listIconSize)) {
     return;
   }
   captureViewAnchor();
   m_listAdapter.onPointerCancel();
   m_gridAdapter.onPointerCancel();
-  m_listIconSize = size;
-  m_preferences.saveListIconSize(size);
+  if (m_viewMode == luciole::ViewMode::Miller) {
+    m_millerIconSize = size;
+    m_preferences.saveMillerIconSize(size);
+  } else {
+    m_listIconSize = size;
+    m_preferences.saveListIconSize(size);
+  }
   m_browserDirty = true;
   m_surface->requestUpdate();
 }
@@ -2055,8 +2097,8 @@ int BrowserPage::zoomStep() const {
   if (m_viewMode == luciole::ViewMode::Grid) {
     return static_cast<int>(m_gridZoom);
   }
-  const auto size = static_cast<int>(luciole::fileRowIconSize(m_listIconSize));
-  return static_cast<int>(std::ranges::find(luciole::kListIconSizes, size) - luciole::kListIconSizes.begin());
+  const auto size = static_cast<int>(rowIconSize());
+  return static_cast<int>(std::ranges::find(luciole::kRowIconSizes, size) - luciole::kRowIconSizes.begin());
 }
 
 void BrowserPage::changeZoomStep(int requested) {
@@ -2064,10 +2106,10 @@ void BrowserPage::changeZoomStep(int requested) {
     changeGridZoom(requested);
     return;
   }
-  const auto step = std::clamp(requested, 0, static_cast<int>(luciole::kListIconSizes.size()) - 1);
-  // Staying on the default size keeps the list on automatic sizing.
+  const auto step = std::clamp(requested, 0, static_cast<int>(luciole::kRowIconSizes.size()) - 1);
+  // Staying on the default size keeps the view on automatic sizing.
   if (step != zoomStep()) {
-    changeListIconSize(luciole::kListIconSizes[static_cast<std::size_t>(step)]);
+    changeRowIconSize(luciole::kRowIconSizes[static_cast<std::size_t>(step)]);
   }
 }
 
@@ -2080,11 +2122,11 @@ void BrowserPage::resetZoom() {
     );
     return;
   }
-  changeListIconSize(0);
+  changeRowIconSize(0);
 }
 
 bool BrowserPage::zoomFromKey(const KeyboardEvent& event) {
-  if ((m_viewMode != luciole::ViewMode::Grid && m_viewMode != luciole::ViewMode::List) || m_list == nullptr) {
+  if (m_list == nullptr) {
     return false;
   }
   int zoom = zoomStep();
@@ -2110,20 +2152,21 @@ bool BrowserPage::zoomFromKey(const KeyboardEvent& event) {
 }
 
 bool BrowserPage::zoomFromScroll(const PointerEvent& event) {
-  if ((m_viewMode != luciole::ViewMode::Grid && m_viewMode != luciole::ViewMode::List)
-      || m_list == nullptr
-      || !m_list->visible()
+  // Columns zoom from anywhere over the columns, not only the focused one.
+  Node* area = m_viewMode == luciole::ViewMode::Miller ? static_cast<Node*>(m_millerView) : m_list;
+  if (area == nullptr
+      || !area->visible()
       || m_connection.keyboardModifiers() != KeyMod::Ctrl
       || event.axis != WL_POINTER_AXIS_VERTICAL_SCROLL) {
     m_zoomScroll = 0;
     return false;
   }
   float localX = 0, localY = 0;
-  if (!Node::mapFromScene(m_list, static_cast<float>(event.sx), static_cast<float>(event.sy), localX, localY)
+  if (!Node::mapFromScene(area, static_cast<float>(event.sx), static_cast<float>(event.sy), localX, localY)
       || localX < 0
       || localY < 0
-      || localX >= m_list->width()
-      || localY >= m_list->height()) {
+      || localX >= area->width()
+      || localY >= area->height()) {
     return false;
   }
   const double steps = event.axisValue120 != 0 ? event.axisValue120 / 120.0
@@ -2171,7 +2214,7 @@ void BrowserPage::syncBrowser() {
   m_list->setCellHeight(gridHeight());
   m_list->setMinCellWidth(luciole::gridMetrics(gridIconSize(), m_savedSettings.presentation, false).minWidth);
   m_gridAdapter.setGridIconSize(gridIconSize());
-  m_listAdapter.setListIconSize(m_listIconSize);
+  m_listAdapter.setRowIconSize(m_listIconSize);
   for (auto* adapter : {&m_listAdapter, &m_gridAdapter}) {
     adapter->setPresentation(m_savedSettings.presentation, snapshot.metadata.filesystem.readOnly);
   }
@@ -2330,6 +2373,7 @@ void BrowserPage::prepareFrame(bool, bool layout) {
     UiPhaseScope phase(UiPhase::Layout);
     m_millerView->activationMode = m_activationMode;
     m_millerView->presentation = m_savedSettings.presentation;
+    m_millerView->iconSize = m_millerIconSize;
     m_millerView->synchronize();
     if (auto* grid = m_millerView->focusedView()) {
       m_list = grid;
@@ -2519,6 +2563,7 @@ void BrowserPage::buildScene() {
                        .controlHeight = 24.0F,
                        .variant = ButtonVariant::Ghost,
                        .tooltip = "Close pane (Ctrl+Alt+W)",
+                       .followsCloseButtons = true,
                        .padding = Style::spaceXs,
                        .width = 24.0F,
                        .onClick =

@@ -22,6 +22,7 @@ public:
     FileRename,
     PlaceRename,
     PlaceIcon,
+    FolderIcon,
     Properties,
     About,
     KeyboardShortcuts,

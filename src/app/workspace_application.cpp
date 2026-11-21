@@ -14,6 +14,7 @@
 #include "cursor-shape-v1-client-protocol.h"
 #include "fs/gio_ptr.h"
 #include "platform/desktop_integration.h"
+#include "render/animation/motion_service.h"
 #include "render/render_context.h"
 #include "render/scene/input_area.h"
 #include "render/scene/input_dispatcher.h"
@@ -60,12 +61,19 @@ WorkspaceApplication::WorkspaceApplication(
   m_preferences.setChangedCallback([this](const std::string& error) {
     if (m_preferences.settings()) {
       m_defaults = m_preferences.settings()->browser;
-      // Live-radius bindings update open widgets; controls built afterwards pick it up directly.
+      // Live Style bindings update open widgets; controls built afterwards pick the values up directly.
       Style::setCornerRadiusScale(static_cast<float>(m_defaults.cornerRadiusScale));
+      Style::setCloseButtonsEnabled(m_defaults.showCloseButtons);
+      MotionService::instance().setEnabled(!m_defaults.reduceAnimations);
     }
     for (auto& [id, page] : m_pages) {
       (void)id;
       page->preferencesChanged(error);
+    }
+    // Unchanged windows ignore the request; changed ones rebuild their strips when the compositor answers.
+    for (auto& [id, host] : m_hosts) {
+      (void)id;
+      host->surface.setUseSSD(m_defaults.useSSD);
     }
   });
   m_clipboard.setChangedCallback([this] {
@@ -781,7 +789,9 @@ void WorkspaceApplication::pointer(const PointerEvent& event) {
     for (const auto& [tab, button] : host->buttons) {
       if (host->tabScroll->containsScenePoint(x, y)
           && button->containsScenePoint(x, y)
-          && (event.button == BTN_MIDDLE || !host->closeButtons.at(tab).first->containsScenePoint(x, y))
+          && (event.button == BTN_MIDDLE
+              || !host->closeButtons.at(tab).first->visible()
+              || !host->closeButtons.at(tab).first->containsScenePoint(x, y))
           && event.type == PointerEvent::Type::Button
           && event.pressed) {
         if (event.button == BTN_MIDDLE) {
@@ -937,6 +947,7 @@ luciole::WindowId WorkspaceApplication::newWindow(std::unique_ptr<FileChooserSes
   });
   host->dispatcher.setFocusChangeCallback([this, raw](InputArea*, InputArea* focused) { focusChanged(*raw, focused); });
   const bool choosing = host->chooser != nullptr;
+  host->surface.setUseSSD(m_defaults.useSSD);
   if (!host->surface.initialize(
           nullptr,
           {.width = choosing ? 900U : 1080U,
@@ -1507,6 +1518,7 @@ void WorkspaceApplication::rebuildStrip(Host& host, const luciole::TabWindow& wi
              .variant = ButtonVariant::Ghost,
              .customPalette = closeTabPalette(foreground),
              .tooltip = "Close tab",
+             .followsCloseButtons = true,
              .minWidth = 24.0F,
              .maxWidth = 24.0F,
              .padding = 0.0F,

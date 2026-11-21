@@ -1,6 +1,7 @@
 #include "fs/directory_session.h"
 
 #include "fs/background_job.h"
+#include "fs/custom_icons.h"
 #include "fs/gio_interop.h"
 #include "fs/heap_trim.h"
 #include "fs/native_listing.h"
@@ -12,6 +13,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -76,6 +78,11 @@ namespace {
   // one, up to the maximum, so a large folder republishes only a few times.
   constexpr std::chrono::milliseconds kSniffPublishInterval{100};
   constexpr std::chrono::milliseconds kMaxSniffPublishInterval{1600};
+  // The icon pass publishes and gives up its link worker after this long or this many entries, then queues again
+  // behind the other passes; each later slice may run twice as long, up to the maximum.
+  constexpr std::chrono::milliseconds kIconSliceInterval{100};
+  constexpr std::chrono::milliseconds kMaxIconSliceInterval{1600};
+  constexpr std::size_t kIconSliceEntries = 4096;
   // Following a link can block without end on an unresponsive network or FUSE mount, and cancellation cannot
   // interrupt it. The link passes of every session share these workers, so hung targets hold at most this many of
   // GIO's pool threads.
@@ -303,6 +310,15 @@ struct luciole::DirectorySession::State : std::enable_shared_from_this<State> {
     std::shared_ptr<const std::vector<std::pair<std::size_t, std::string>>> links =
         std::make_shared<const std::vector<std::pair<std::size_t, std::string>>>();
     std::unordered_set<std::size_t> directoryLinks;
+    // A native listing's folders by name, for the icon pass. Links get their icons from the link pass, which already
+    // follows them, so a link to a hung mount blocks one worker rather than both.
+    std::shared_ptr<const std::vector<std::string>> iconCandidates = std::make_shared<const std::vector<std::string>>();
+    // How many candidates the icon pass has read, the names among them with an icon, and those icons, shared between
+    // entries with equal ones.
+    std::size_t iconsChecked = 0;
+    std::unordered_set<std::string, NameHash, std::equal_to<>> iconNames;
+    std::vector<SharedFileIcon> iconShared;
+    std::chrono::milliseconds iconInterval = kIconSliceInterval;
     // Identities of this scan's entries by name; the published entries replace State::identities, and this table
     // is dropped then.
     std::unordered_map<std::string, std::uint64_t> identities;
@@ -337,6 +353,9 @@ struct luciole::DirectorySession::State : std::enable_shared_from_this<State> {
   LinkTargetCheck linksToDirectory;
   // Names of the published links that lead to folders. A rescan keeps them there until its own pass checks again.
   std::unordered_set<std::string, NameHash, std::equal_to<>> directoryLinkNames;
+  // Icons that replace the listing's own: a link's target icon, a folder's custom icon. A rescan keeps them until its
+  // own icon pass checks again.
+  std::unordered_map<std::string, SharedFileIcon, NameHash, std::equal_to<>> iconOverrides;
   guint timer = 0;
   bool dirty = false;
   bool entriesAccessInvalidated = false;
@@ -451,6 +470,10 @@ struct luciole::DirectorySession::State : std::enable_shared_from_this<State> {
               }
               std::unordered_map<std::size_t, DirectoryEntry> fresh;
               for (auto& [index, entry] : job.facts) {
+                const auto icon = state->iconOverrides.find(entry.name);
+                if (icon != state->iconOverrides.end() && (entry.symlink || entry.type == FileType::Directory)) {
+                  entry.icon = icon->second;
+                }
                 fresh.emplace(index, std::move(entry));
               }
               std::vector<std::pair<std::size_t, DirectoryEntry>> retained;
@@ -896,6 +919,7 @@ struct luciole::DirectorySession::State : std::enable_shared_from_this<State> {
     }
     scan->entries = std::move(listing.entries);
     collectLinks();
+    collectIconCandidates();
     const auto listedScan = scan;
     if (listing.limited) {
       complete(FileError{FileErrorKind::Unsupported, std::string(kEntryLimitMessage)});
@@ -908,6 +932,13 @@ struct luciole::DirectorySession::State : std::enable_shared_from_this<State> {
     }
     if (scan && scan == listedScan && !snapshot.error && !scan->links->empty()) {
       resolveLinks();
+    }
+    if (scan && scan == listedScan && !snapshot.error) {
+      if (scan->iconCandidates->empty()) {
+        iconsRead(0, {}); // Nothing to read: drop the previous listing's icons.
+      } else {
+        resolveIcons();
+      }
     }
   }
 
@@ -932,7 +963,7 @@ struct luciole::DirectorySession::State : std::enable_shared_from_this<State> {
       for (std::size_t i = 0; i < scan->entries.size(); ++i) {
         auto& entry = scan->entries[i];
         if (entry.symlink) {
-          entry.linksToDirectory = add(i, entry.name);
+          entry.setLinksToDirectory(add(i, entry.name));
         }
       }
     }
@@ -957,6 +988,7 @@ struct luciole::DirectorySession::State : std::enable_shared_from_this<State> {
       std::shared_ptr<const std::vector<std::pair<std::size_t, std::string>>> links;
       LinkTargetCheck linksToDirectory;
       std::unordered_set<std::size_t> directoryLinks;
+      std::vector<std::pair<std::string, FileIconSource>> icons;
       bool complete = false;
     };
     auto* task = g_task_new(
@@ -966,7 +998,7 @@ struct luciole::DirectorySession::State : std::enable_shared_from_this<State> {
           LinkWorkers::shared().finished();
           auto& job = *static_cast<Job*>(g_task_get_task_data(G_TASK(result)));
           if (const auto state = request->state.lock(); state && state->scan == request->scan && job.complete) {
-            state->linksFollowed(std::move(job.directoryLinks));
+            state->linksFollowed(std::move(job.directoryLinks), std::move(job.icons));
           }
         },
         new Request{.state = weak_from_this(), .scan = scan}
@@ -978,6 +1010,7 @@ struct luciole::DirectorySession::State : std::enable_shared_from_this<State> {
             .links = scan->links,
             .linksToDirectory = linksToDirectory,
             .directoryLinks = {},
+            .icons = {},
             .complete = false
         },
         [](gpointer data) { delete static_cast<Job*>(data); }
@@ -985,14 +1018,23 @@ struct luciole::DirectorySession::State : std::enable_shared_from_this<State> {
     g_task_run_in_thread(task, [](GTask* task, gpointer, gpointer data, GCancellable* cancellable) {
       auto& job = *static_cast<Job*>(data);
       const std::string_view separator = job.folder.ends_with('/') ? "" : "/";
+      // Over the network every target icon would cost requests; such links keep their listing's icons.
+      const bool readIcons = !networkFilesystem(job.folder);
       job.complete = true;
       for (const auto& [index, name] : *job.links) {
         if (g_cancellable_is_cancelled(cancellable) != FALSE) {
           job.complete = false;
           break;
         }
-        if (job.linksToDirectory(std::string(job.folder).append(separator).append(name))) {
+        const auto path = std::string(job.folder).append(separator).append(name);
+        if (job.linksToDirectory(path)) {
           job.directoryLinks.insert(index);
+        }
+        // The target just answered, so following it again for its icon does not risk a second hung worker.
+        if (readIcons) {
+          if (auto icon = linkTargetIcon(path)) {
+            job.icons.emplace_back(name, std::move(*icon));
+          }
         }
       }
       g_task_return_boolean(task, TRUE);
@@ -1000,20 +1042,239 @@ struct luciole::DirectorySession::State : std::enable_shared_from_this<State> {
     g_object_unref(task);
   }
 
-  void linksFollowed(std::unordered_set<std::size_t> directoryLinks) {
+  void linksFollowed(
+      std::unordered_set<std::size_t> directoryLinks, std::vector<std::pair<std::string, FileIconSource>> read
+  ) {
     directoryLinkNames.clear();
     for (const auto& [index, name] : *scan->links) {
       if (directoryLinks.contains(index)) {
         directoryLinkNames.emplace(name);
       }
     }
-    if (directoryLinks == scan->directoryLinks) {
-      return;
+    if (directoryLinks != scan->directoryLinks) {
+      scan->directoryLinks = std::move(directoryLinks);
+      snapshot.entries = snapshot.entries.withDirectoryLinks(scan->directoryLinks);
+      identities.rebase(snapshot.entries);
+      notify();
     }
-    scan->directoryLinks = std::move(directoryLinks);
-    snapshot.entries = snapshot.entries.withDirectoryLinks(scan->directoryLinks);
-    identities.rebase(snapshot.entries);
-    notify();
+    std::unordered_set<std::string, NameHash, std::equal_to<>> changed;
+    std::unordered_set<std::string, NameHash, std::equal_to<>> withIcon;
+    for (auto& [name, source] : read) {
+      withIcon.insert(name);
+      setIconOverride(std::move(name), std::move(source), changed);
+    }
+    // This pass owns the links' icons: those it found none for, a dangling link's, go.
+    for (const auto& [index, name] : *scan->links) {
+      if (!withIcon.contains(name) && iconOverrides.erase(name) != 0) {
+        changed.insert(name);
+      }
+    }
+    if (!changed.empty()) {
+      applyIcons(changed);
+    }
+  }
+
+  // Folders get their icons from the icon pass; until it runs, folders and links keep the previous passes'.
+  void collectIconCandidates() {
+    auto candidates = std::make_shared<std::vector<std::string>>();
+    if (scan->catalogue) {
+      for (std::size_t i = 0; i < scan->catalogue->items.size(); ++i) {
+        const auto brief = scan->catalogue->brief(i);
+        if (!brief.symlink && brief.type == FileType::Directory) {
+          candidates->emplace_back(brief.name);
+        }
+      }
+    } else {
+      for (auto& entry : scan->entries) {
+        if (!entry.symlink && entry.type == FileType::Directory) {
+          candidates->emplace_back(entry.name);
+        }
+        const auto icon = iconOverrides.find(entry.name);
+        if (icon != iconOverrides.end() && (entry.symlink || entry.type == FileType::Directory)) {
+          entry.icon = icon->second;
+        }
+      }
+    }
+    scan->iconCandidates = std::move(candidates);
+  }
+
+  // Reads custom folder icons on a shared link worker; see kLinkWorkers.
+  void resolveIcons() {
+    LinkWorkers::shared().run([weak = weak_from_this(), listed = scan] {
+      const auto state = weak.lock();
+      if (!state || state->scan != listed || g_cancellable_is_cancelled(listed->cancellable.get()) != FALSE) {
+        return false;
+      }
+      state->readIcons();
+      return true;
+    });
+  }
+
+  void readIcons() {
+    struct Job {
+      std::string folder;
+      std::shared_ptr<const std::vector<std::string>> candidates;
+      std::size_t begin = 0;
+      std::chrono::milliseconds interval{0};
+      std::size_t end = 0;
+      std::vector<std::pair<std::string, FileIconSource>> icons;
+      bool complete = false;
+    };
+    auto* task = g_task_new(
+        nullptr, scan->cancellable.get(),
+        [](GObject*, GAsyncResult* result, gpointer data) {
+          const std::unique_ptr<Request> request(static_cast<Request*>(data));
+          LinkWorkers::shared().finished();
+          auto& job = *static_cast<Job*>(g_task_get_task_data(G_TASK(result)));
+          if (const auto state = request->state.lock(); state && state->scan == request->scan && job.complete) {
+            state->iconsRead(job.end, std::move(job.icons));
+          }
+        },
+        new Request{.state = weak_from_this(), .scan = scan}
+    );
+    g_task_set_task_data(
+        task,
+        new Job{
+            .folder = scan->path,
+            .candidates = scan->iconCandidates,
+            .begin = scan->iconsChecked,
+            .interval = std::exchange(scan->iconInterval, std::min(2 * scan->iconInterval, kMaxIconSliceInterval)),
+            .end = scan->iconsChecked,
+            .icons = {},
+            .complete = false
+        },
+        [](gpointer data) { delete static_cast<Job*>(data); }
+    );
+    g_task_run_in_thread(task, [](GTask* task, gpointer, gpointer data, GCancellable* cancellable) {
+      auto& job = *static_cast<Job*>(data);
+      job.complete = true;
+      // Over the network every folder would cost requests; such folders keep their listing's icons.
+      if (job.begin == 0 && networkFilesystem(job.folder)) {
+        job.end = job.candidates->size();
+        g_task_return_boolean(task, TRUE);
+        return;
+      }
+      const auto deadline = std::chrono::steady_clock::now() + job.interval;
+      const std::string_view separator = job.folder.ends_with('/') ? "" : "/";
+      for (job.end = job.begin; job.end < job.candidates->size(); ++job.end) {
+        if (g_cancellable_is_cancelled(cancellable) != FALSE) {
+          job.complete = false;
+          break;
+        }
+        if (job.end > job.begin
+            && (job.end - job.begin >= kIconSliceEntries || std::chrono::steady_clock::now() >= deadline)) {
+          break;
+        }
+        const auto& name = (*job.candidates)[job.end];
+        if (auto icon = customFolderIcon(std::string(job.folder).append(separator).append(name))) {
+          job.icons.emplace_back(name, std::move(*icon));
+        }
+      }
+      g_task_return_boolean(task, TRUE);
+    });
+    g_object_unref(task);
+  }
+
+  // Shares `source` between entries with equal icons, as the listing's own icons do, and records a changed name.
+  void setIconOverride(
+      std::string name, FileIconSource source, std::unordered_set<std::string, NameHash, std::equal_to<>>& changed
+  ) {
+    auto found = std::ranges::find_if(scan->iconShared, [&](const auto& icon) { return *icon == source; });
+    if (found == scan->iconShared.end()) {
+      scan->iconShared.push_back(std::make_shared<const FileIconSource>(std::move(source)));
+      found = std::prev(scan->iconShared.end());
+    }
+    auto [previous, inserted] = iconOverrides.try_emplace(name, *found);
+    if (inserted || !sameIcon(previous->second, *found)) {
+      previous->second = *found;
+      changed.insert(std::move(name));
+    }
+  }
+
+  // Applies one slice of the icon pass: its icons at once, and once the pass is done, the removal of icons whose
+  // folders no longer set one. Links' icons are linksFollowed()'s. A pass that isn't done queues its next slice.
+  void iconsRead(std::size_t end, std::vector<std::pair<std::string, FileIconSource>> read) {
+    std::unordered_set<std::string, NameHash, std::equal_to<>> changed;
+    for (auto& [name, source] : read) {
+      scan->iconNames.insert(name);
+      setIconOverride(std::move(name), std::move(source), changed);
+    }
+    scan->iconsChecked = end;
+    const bool done = end >= scan->iconCandidates->size();
+    if (done) {
+      std::unordered_set<std::string_view> links;
+      for (const auto& [index, name] : *scan->links) {
+        links.insert(name);
+      }
+      for (auto it = iconOverrides.begin(); it != iconOverrides.end();) {
+        if (scan->iconNames.contains(it->first) || links.contains(it->first)) {
+          ++it;
+        } else {
+          changed.insert(it->first);
+          it = iconOverrides.erase(it);
+        }
+      }
+    }
+    const auto current = scan;
+    if (!changed.empty()) {
+      applyIcons(changed);
+    }
+    // The observer may have navigated away.
+    if (!done && scan == current) {
+      resolveIcons();
+    }
+  }
+
+  // The icon `entry` shows: its override, or the one its listing derives from its type.
+  SharedFileIcon iconFor(const DirectoryEntry& entry) {
+    if (const auto icon = iconOverrides.find(entry.name); icon != iconOverrides.end()) {
+      return icon->second;
+    }
+    if (entry.symlink && entry.linksToDirectory) {
+      return localFolderIcon();
+    }
+    const auto type = entry.symlink         ? G_FILE_TYPE_SYMBOLIC_LINK
+        : entry.type == FileType::Directory ? G_FILE_TYPE_DIRECTORY
+                                            : G_FILE_TYPE_REGULAR;
+    return icons.getLocal(
+        entry.name.c_str(), type, entry.contentType ? entry.contentType->c_str() : nullptr, *scan->folder
+    );
+  }
+
+  void applyIcons(const std::unordered_set<std::string, NameHash, std::equal_to<>>& names) {
+    bool touched = false;
+    if (snapshot.entries.isCatalogue()) {
+      // Rows without facts yet take their icon when their facts arrive.
+      std::vector<std::pair<std::size_t, DirectoryEntry>> facts;
+      for (std::size_t i = 0; i < snapshot.entries.size(); ++i) {
+        if (const auto* known = snapshot.entries.known(i)) {
+          auto entry = *known;
+          if (names.contains(entry.name)) {
+            entry.icon = iconFor(entry);
+            touched = true;
+          }
+          facts.emplace_back(i, std::move(entry));
+        }
+      }
+      if (touched) {
+        snapshot.entries = snapshot.entries.withFacts(std::move(facts));
+      }
+    } else {
+      std::vector<DirectoryEntry> entries(snapshot.entries.begin(), snapshot.entries.end());
+      for (auto& entry : entries) {
+        if (names.contains(entry.name)) {
+          entry.icon = iconFor(entry);
+          touched = true;
+        }
+      }
+      if (touched) {
+        snapshot.entries = std::move(entries);
+      }
+    }
+    if (touched) {
+      identities.rebase(snapshot.entries);
+      notify();
+    }
   }
 
   // Uncertain entries reuse the published type of an unchanged file; the others wait for sniffContents().
@@ -1356,6 +1617,7 @@ void luciole::DirectorySession::open(const Location& location) {
   state->stop();
   state->identities.clear();
   state->directoryLinkNames.clear();
+  state->iconOverrides.clear();
   state->snapshot.location = location;
   state->snapshot.entries = {};
   state->entriesAccessInvalidated = false;

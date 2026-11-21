@@ -49,6 +49,7 @@ namespace luciole {
     Open,
     ContainingFolder,
     OriginalLocation,
+    ShowLinkTarget,
     Pin,
     Unpin,
     CutFiles,
@@ -122,6 +123,7 @@ namespace luciole {
     bool showPreview = false;
     bool clipboardAvailable = false;
     bool clipboardHasFiles = false;
+    bool clipboardHasImage = false;
     bool terminalAvailable = false;
     bool canUndo = false, canRedo = false;
     bool chooser = false;

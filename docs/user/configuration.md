@@ -1,6 +1,6 @@
 # Configuration
 
-Open Settings with Ctrl+, or the main menu. It is a page inside the existing window. Changes save automatically; no manual reload is needed. Reset removes a GUI override so the base configuration or built-in default applies again. Reset all settings removes the browser override set.
+Open Settings with Ctrl+, or the main menu. It is a page inside the existing window. Changes save automatically; no manual reload is needed. Reset removes a GUI override so the base configuration or built-in default applies again. Reset All Settings removes the browser override set.
 
 Settings stays open when another window gains focus, preserving your selected category and unfinished edits. Close it with Escape or its close button. Settings follows the available window size while open. Enlarging the window restores its normal dialog size; narrowing it switches to compact category navigation without resetting your selected category or edits.
 
@@ -35,6 +35,7 @@ switch_to_new_tab = true
 confirm_permanent_deletion = true
 restore_last_window = false
 compact_menus = true
+show_close_buttons = true
 background_opacity = 1.0
 corner_radius_scale = 1.0
 sort_by = "name"
@@ -65,6 +66,7 @@ All keys below belong in `[browser]`. Dimensions are logical pixels unless state
 | `view_mode` | `"list"` | `"list"`, `"grid"`, `"miller"` |
 | `grid_icon_size` | `96` | `32`, `48`, `64`, `80`, `96`, `128`, `160`, `192`, `256` |
 | `list_icon_size` | `0` | `0` uses the default size, `32`; or `16`, `20`, `24`, `28`, `32`, `40`, `48`, `64`. Rows grow with the icon. |
+| `miller_icon_size` | `0` | Columns view icon size: `0` uses the density's size (`20` compact, `28` comfortable); otherwise the same values as `list_icon_size` |
 | `density` | `"compact"` | `"compact"`, `"comfortable"` |
 | `filename_truncation` | `"middle"` | `"middle"` keeps both ends of long filenames; `"end"` keeps the beginning. Applies to List and Columns. |
 | `show_size_caption` | `false` | Size caption in Grid view |
@@ -76,11 +78,15 @@ All keys below belong in `[browser]`. Dimensions are logical pixels unless state
 | `always_show_tab_bar` | `true` | Keep the tab bar visible when a window has only one tab |
 | `always_show_status_bar` | `false` | Keep the status pill visible when idle, showing the item count and free space |
 | `compact_menus` | `true` | Reduce the row height and padding in context menus without shrinking their text |
+| `show_close_buttons` | `true` | Show the glyph close buttons on tabs, dialogs, panes, the preview and archives. Disable to hide them live; the window controls, Escape and Close/Cancel actions still close things |
+| `reduce_animations` | `false` | Skip animated transitions, such as file entries fading in as they scroll into Grid and List views, smooth scrolling and the sidebar drawer. Applies live |
+| `use_ssd` | `true` | Let the compositor draw the title bar and borders (server-side decoration) when it supports them. Disable to always draw Luciole's own (client-side decoration). Open windows switch live |
 | `background_opacity` | `1.0` | Number from `0` (clear) to `1` (opaque) for the window background; tabs, toolbar, sidebar and file area share it. Menus and dialogs stay opaque |
 | `corner_radius_scale` | `1.0` | Number from `0` (square) to `2` (extra rounded) scaling every corner radius, like Noctalia's setting of the same name. Open windows, menus and dialogs update live |
 | `activation_mode` | `"double_click"` | `"single_click"`, `"double_click"` |
 | `typing_mode` | `"search"` | `"search"` recursively searches filenames; `"filter"` filters names in the current folder only; `"typeahead"` selects names |
 | `drop_action` | `"menu"` | Action for a drop without a modifier: `"menu"` opens a drop action context menu at the pointer, `"copy"` copies, `"move"` moves. Ctrl, Shift and Alt still take priority; Trash, items from Trash and non-native folders keep their fixed behavior |
+| `single_click_location_edit` | `false` | Edit the location bar path with a single click on the current folder breadcrumb or unused space instead of a double-click |
 | `confirm_permanent_deletion` | `true` | Ask before permanently deleting selected items, including Shift+Delete and selections in Trash; Empty Trash always confirms |
 | `show_permanent_deletion` | `false` | Show Delete Permanently in context menus for items outside Trash; Shift+Delete and Trash actions stay available either way |
 | `switch_to_new_tab` | `true` | Switch when opening a folder in a new tab; disable to keep browsing the current tab |
@@ -137,9 +143,9 @@ Name accepts `0` for automatic sizing or an integer from `160` through `16384`. 
 | `thumbnail_max_file_mib` | `64` | Image/PDF source limit, integer `1` through `1024`; does not limit video/audio file size |
 | `thumbnail_cache_mib` | `1024` | Integer `16` through `8192`; only Luciole-written thumbnails count and are pruned |
 
-Local policy generates thumbnails for eligible local files. It skips network shares and FUSE mounts without a local disk, such as rclone and sshfs. A FUSE mount of local files that has no disk of its own, such as gocryptfs, is skipped too; choose All locations to get its thumbnails. To generate thumbnails on mounted network shares such as `/mnt/media`, choose Settings → Thumbnails → Show thumbnails → All locations. All permits generation from filesystem paths, including mounted shares, and reuses the shared thumbnail cache. Locations without a filesystem path remain cache-only; Luciole does not download entire remote files for thumbnail generation.
+Local policy generates thumbnails for eligible local files. It skips network shares and FUSE mounts without a local disk, such as rclone and sshfs. A FUSE mount of local files that has no disk of its own, such as gocryptfs, is skipped too; choose All Locations to get its thumbnails. To generate thumbnails on mounted network shares such as `/mnt/media`, choose Settings → Thumbnails → Show Thumbnails → All Locations. All permits generation from filesystem paths, including mounted shares, and reuses the shared thumbnail cache. Locations without a filesystem path remain cache-only; Luciole does not download entire remote files for thumbnail generation.
 
-The Image/PDF size limit applies to image and PDF sources. Video stills and embedded audio artwork use seekable media access and are not rejected merely because their files exceed that limit. There is no pixel-count limit: a decoding helper's memory, CPU time and output limits decide how large an image can be, which admits phone photos up to about 200 megapixels. Settings also provides cache inspection/clearing. Luciole reuses compatible shared thumbnails and preserves cache files created or replaced by other applications. Older Luciole video thumbnails regenerate using representative frames instead of always taking the opening frame. With `ffmpegthumbnailer` installed, newly generated video thumbnails include its filmstrip edges, stored in the shared cache so other file managers display them too. Missing/failing helpers keep a plain thumbnail. The edges come from the thumbnailer rather than the icon theme. Native video previews generate clean frames separately.
+The Image/PDF Size Limit applies to image and PDF sources. Video stills and embedded audio artwork use seekable media access and are not rejected merely because their files exceed that limit. There is no pixel-count limit: a decoding helper's memory, CPU time and output limits decide how large an image can be, which admits phone photos up to about 200 megapixels. Settings also provides cache inspection/clearing. Luciole reuses compatible shared thumbnails and preserves cache files created or replaced by other applications. Older Luciole video thumbnails regenerate using representative frames instead of always taking the opening frame. With `ffmpegthumbnailer` installed, newly generated video thumbnails include its filmstrip edges, stored in the shared cache so other file managers display them too. Missing/failing helpers keep a plain thumbnail. The edges come from the thumbnailer rather than the icon theme. Native video previews generate clean frames separately.
 
 ## Other writable data
 
