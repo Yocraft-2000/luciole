@@ -1,9 +1,9 @@
 #include "app/page/submenu_controller.h"
 
 #include "app/page/page_context.h"
+#include "config/keybinds.h"
 #include "config/settings.h"
 #include "core/deferred_call.h"
-#include "core/input/key_symbols.h"
 #include "core/ui_phase.h"
 #include "platform/desktop_integration.h"
 #include "render/animation/animation_manager.h"
@@ -225,18 +225,22 @@ bool SubmenuController::key(const KeyboardEvent& event) {
   if (!m_surface) {
     return false;
   }
-  if (!event.pressed) {
+  if (!event.pressed || event.preedit) {
     return true;
   }
-  if (KeySymbol::isEscape(event.sym) || KeySymbol::isLeft(event.sym)) {
+  using K = luciole::KeybindCommand;
+  const bool up = luciole::keybindMatches(K::MoveUp, event.sym, event.modifiers);
+  const bool down = luciole::keybindMatches(K::MoveDown, event.sym, event.modifiers);
+  if (luciole::keybindMatches(K::Cancel, event.sym, event.modifiers)
+      || luciole::keybindMatches(K::MoveLeft, event.sym, event.modifiers)) {
     dismiss();
-  } else if (KeySymbol::isEnter(event.sym)) {
+  } else if (luciole::keybindMatches(K::Validate, event.sym, event.modifiers)) {
     if (m_menu->highlightedIndex() >= m_menu->entryCount()) {
       (void)m_menu->moveHighlight(1);
     }
     (void)m_menu->activateHighlighted();
-  } else if (KeySymbol::isUp(event.sym) || KeySymbol::isDown(event.sym)) {
-    (void)m_menu->moveHighlight(KeySymbol::isUp(event.sym) ? -1 : 1);
+  } else if (up || down) {
+    (void)m_menu->moveHighlight(up ? -1 : 1);
     const auto index = m_menu->highlightedIndex();
     const float top = m_menu->rowTop(index), bottom = m_menu->rowBottom(index);
     const float offset = m_scroll->scrollOffset();

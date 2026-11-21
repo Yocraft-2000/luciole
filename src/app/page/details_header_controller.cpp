@@ -315,8 +315,7 @@ bool DetailsHeaderController::widthKey(const KeyboardEvent& event) {
 }
 
 bool DetailsHeaderController::menuKey(const KeyboardEvent& event) {
-  if ((event.sym == XKB_KEY_Menu && event.modifiers == 0)
-      || (event.sym == XKB_KEY_F10 && event.modifiers == KeyMod::Shift)) {
+  if (luciole::keybindMatches(luciole::KeybindCommand::ContextMenu, event.sym, event.modifiers)) {
     for (std::size_t index = 0; index < m_columnWidths.size(); ++index) {
       auto* header = widthHeader(index);
       if (m_page.dispatcher().focusedArea() == header->inputArea()) {

@@ -8,6 +8,7 @@
 #include "browser/selection_tools.h"
 #include "browser/tab_workspace.h"
 #include "clipboard/text_clipboard.h"
+#include "config/keybinds.h"
 #include "config/settings.h"
 #include "config/view_preference_writer.h"
 #include "core/deferred_call.h"
@@ -66,6 +67,7 @@
 #include <format>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 
@@ -1121,7 +1123,10 @@ void BrowserPage::keyboard(const KeyboardEvent& event) {
   if (m_archiveController.key(event)) {
     return;
   }
-  if (choosing() && event.pressed && !event.preedit && event.modifiers == 0 && KeySymbol::isEscape(event.sym)) {
+  if (choosing()
+      && event.pressed
+      && !event.preedit
+      && luciole::keybindMatches(luciole::KeybindCommand::Cancel, event.sym, event.modifiers)) {
     if (!m_locationBar.escapeKey(event)) {
       m_chooser.cancel();
     }
@@ -1151,16 +1156,16 @@ void BrowserPage::keyboard(const KeyboardEvent& event) {
 }
 
 bool BrowserPage::escapeGesture(const KeyboardEvent& event) {
-  if ((m_detailsHeader.gestureActive() || (m_millerView && m_millerView->resizing()))
-      && KeySymbol::isEscape(event.sym)) {
+  const bool cancel = luciole::keybindMatches(luciole::KeybindCommand::Cancel, event.sym, event.modifiers);
+  if ((m_detailsHeader.gestureActive() || (m_millerView && m_millerView->resizing())) && cancel) {
     dispatcher().cancelPointerCapture();
     return true;
   }
-  if (m_sidebar.resizing() && KeySymbol::isEscape(event.sym)) {
+  if (m_sidebar.resizing() && cancel) {
     dispatcher().cancelPointerCapture();
     return true;
   }
-  if (m_dragDrop.dragging() && KeySymbol::isEscape(event.sym)) {
+  if (m_dragDrop.dragging() && cancel) {
     m_dragDrop.cancelDrag();
     return true;
   }
@@ -1176,10 +1181,10 @@ bool BrowserPage::dispatchShortcut(const KeyboardEvent& event, std::initializer_
 }
 
 bool BrowserPage::shortcutKey(const KeyboardEvent& event) {
-  if (!event.repeat && dispatchShortcut(event, {Action::Terminal})) {
+  const bool editing = m_locationBar.textFocused();
+  if (!editing && !event.repeat && dispatchShortcut(event, {Action::Terminal})) {
     return true;
   }
-  const bool editing = m_locationBar.textFocused();
   if (!editing
       && !event.repeat
       && dispatchShortcut(
@@ -1191,6 +1196,7 @@ bool BrowserPage::shortcutKey(const KeyboardEvent& event) {
   if (!editing
       && !event.repeat
       && luciole::shortcutMatches(Action::QuickPreview, event.sym, event.modifiers)
+      && m_list != nullptr
       && dispatcher().focusedArea() == m_list->focusArea()) {
     dispatchAction(Action::QuickPreview);
     return true;
@@ -1204,10 +1210,9 @@ bool BrowserPage::shortcutKey(const KeyboardEvent& event) {
   if (windowKey(event) || m_locationBar.escapeKey(event)) {
     return true;
   }
-  // Escape anywhere else in the page returns to the file list.
+  // Cancel elsewhere returns to the file list.
   if (!editing
-      && event.modifiers == 0
-      && KeySymbol::isEscape(event.sym)
+      && luciole::keybindMatches(luciole::KeybindCommand::Cancel, event.sym, event.modifiers)
       && m_list != nullptr
       && dispatcher().focusedArea() != m_list->focusArea()) {
     focusFileList();
@@ -1237,8 +1242,11 @@ bool BrowserPage::shortcutKey(const KeyboardEvent& event) {
 }
 
 bool BrowserPage::windowKey(const KeyboardEvent& event) {
-  if (KeySymbol::isTab(event.sym)) {
-    (void)dispatcher().cycleTabFocus((event.modifiers & KeyMod::Shift) != 0);
+  const bool focusNext = luciole::keybindMatches(luciole::KeybindCommand::FocusNext, event.sym, event.modifiers);
+  const bool focusPrevious =
+      luciole::keybindMatches(luciole::KeybindCommand::FocusPrevious, event.sym, event.modifiers);
+  if (focusNext || focusPrevious) {
+    (void)dispatcher().cycleTabFocus(focusPrevious);
     if (m_list != nullptr && dispatcher().focusedArea() == m_list->focusArea()) {
       m_fileKeys.focusEntered();
       m_browserDirty = true;
@@ -1246,12 +1254,8 @@ bool BrowserPage::windowKey(const KeyboardEvent& event) {
     m_surface->requestRedraw();
     return true;
   }
-  if (event.sym == XKB_KEY_F11 && !event.repeat) {
+  if (luciole::keybindMatches(luciole::KeybindCommand::Fullscreen, event.sym, event.modifiers) && !event.repeat) {
     m_surface->toggleFullscreen();
-    return true;
-  }
-  if (event.sym == XKB_KEY_q && event.modifiers == KeyMod::Ctrl) {
-    m_surface->close();
     return true;
   }
   if (dispatchShortcut(event, {Action::Settings, Action::KeyboardShortcuts})) {
@@ -1261,10 +1265,7 @@ bool BrowserPage::windowKey(const KeyboardEvent& event) {
     dispatchAction(Action::EditLocation);
     return true;
   }
-  // Ctrl+K is an extra chord for search besides the table's Ctrl+F.
-  if ((luciole::shortcutMatches(Action::Search, event.sym, event.modifiers)
-       || (event.sym == XKB_KEY_k && event.modifiers == KeyMod::Ctrl))
-      && m_locationBar.hasFilterInput()) {
+  if (luciole::shortcutMatches(Action::Search, event.sym, event.modifiers) && m_locationBar.hasFilterInput()) {
     dispatchAction(Action::Search);
     return true;
   }
@@ -1290,8 +1291,10 @@ bool BrowserPage::navigationKey(const KeyboardEvent& event, bool editing) {
 }
 
 bool BrowserPage::millerKey(const KeyboardEvent& event) {
-  if (m_miller.enabled() && event.modifiers == 0 && (event.sym == XKB_KEY_Left || event.sym == XKB_KEY_Right)) {
-    const bool next = (event.sym == XKB_KEY_Right) != Style::rtl();
+  const bool right = luciole::keybindMatches(luciole::KeybindCommand::MoveRight, event.sym, event.modifiers);
+  const bool left = luciole::keybindMatches(luciole::KeybindCommand::MoveLeft, event.sym, event.modifiers);
+  if (m_miller.enabled() && (left || right)) {
+    const bool next = right != Style::rtl();
     if (next) {
       m_fileKeys.selectFirstOnLoad();
       if (m_miller.enter()) {
@@ -2056,16 +2059,11 @@ bool BrowserPage::zoomFromKey(const KeyboardEvent& event) {
     return false;
   }
   int zoom = zoomStep();
-  const bool ctrl = event.modifiers == KeyMod::Ctrl;
-  const bool ctrlShift = event.modifiers == (KeyMod::Ctrl | KeyMod::Shift);
-  if (!ctrl && !ctrlShift) {
-    return false;
-  }
-  if (event.sym == XKB_KEY_plus || event.sym == XKB_KEY_KP_Add || (ctrl && event.sym == XKB_KEY_equal)) {
+  if (luciole::keybindMatches(luciole::KeybindCommand::ZoomIn, event.sym, event.modifiers)) {
     ++zoom;
-  } else if (ctrl && (event.sym == XKB_KEY_minus || event.sym == XKB_KEY_KP_Subtract)) {
+  } else if (luciole::keybindMatches(luciole::KeybindCommand::ZoomOut, event.sym, event.modifiers)) {
     --zoom;
-  } else if (ctrl && (event.sym == XKB_KEY_0 || event.sym == XKB_KEY_KP_0)) {
+  } else if (luciole::keybindMatches(luciole::KeybindCommand::ZoomReset, event.sym, event.modifiers)) {
     m_zoomScroll = 0;
     resetZoom();
     return true;
@@ -2172,14 +2170,20 @@ void BrowserPage::syncBrowser() {
     const auto state = actionState(action, request);
     button->setEnabled(state.enabled);
     const auto& definition = luciole::ActionRegistry::definition(action);
-    button->setTooltip(
-        std::string(definition.label)
-        + " ("
-        + std::string(definition.shortcut)
-        + ")"
-        + (state.enabled ? "" : "\n" + std::string(state.reason))
-    );
+    const auto shortcut = luciole::actionShortcutLabel(action);
+    std::string tooltip(definition.label);
+    if (!shortcut.empty()) {
+      tooltip += std::format(" ({})", shortcut);
+    }
+    if (!state.enabled) {
+      tooltip += "\n" + std::string(state.reason);
+    }
+    button->setTooltip(std::move(tooltip));
   }
+  m_closePaneButton->setTooltip(luciole::shortcutTooltip("Close pane", luciole::KeybindCommand::ClosePane));
+  m_viewSwitch->setOptionTooltip(0, luciole::shortcutTooltip("Grid view", Action::Grid));
+  m_viewSwitch->setOptionTooltip(1, luciole::shortcutTooltip("List view", Action::List));
+  m_viewSwitch->setOptionTooltip(2, luciole::shortcutTooltip("Column view", Action::Miller));
   const bool showEmptyTrash = !choosing() && snapshot.location && snapshot.location->isTrash();
   m_emptyTrashButton->setVisible(showEmptyTrash);
   m_emptyTrashButton->setParticipatesInLayout(showEmptyTrash);
@@ -2481,11 +2485,12 @@ void BrowserPage::buildScene() {
                        .configure = [](Label& label) { label.setUseMarkup(false); }}
                   ),
                   ui::button(
-                      {.glyph = "x",
+                      {.out = &m_closePaneButton,
+                       .glyph = "x",
                        .glyphSize = Style::baseGlyphSize,
                        .controlHeight = 24.0F,
                        .variant = ButtonVariant::Ghost,
-                       .tooltip = "Close pane (Ctrl+Alt+W)",
+                       .tooltip = luciole::shortcutTooltip("Close pane", luciole::KeybindCommand::ClosePane),
                        .padding = Style::spaceXs,
                        .width = 24.0F,
                        .onClick =
@@ -2577,7 +2582,7 @@ std::unique_ptr<Flex> BrowserPage::buildToolbar() {
                .glyph = "arrow-left",
                .glyphSize = Style::baseGlyphSize,
                .variant = ButtonVariant::Ghost,
-               .tooltip = "Back (Alt+Left)",
+               .tooltip = luciole::shortcutTooltip("Back", Action::Back),
                .onClick = [this] { dispatchAction(Action::Back); }}
           ),
           ui::button(
@@ -2585,7 +2590,7 @@ std::unique_ptr<Flex> BrowserPage::buildToolbar() {
                .glyph = "arrow-right",
                .glyphSize = Style::baseGlyphSize,
                .variant = ButtonVariant::Ghost,
-               .tooltip = "Forward (Alt+Right)",
+               .tooltip = luciole::shortcutTooltip("Forward", Action::Forward),
                .onClick = [this] { dispatchAction(Action::Forward); }}
           ),
           ui::button(
@@ -2593,7 +2598,7 @@ std::unique_ptr<Flex> BrowserPage::buildToolbar() {
                .glyph = "arrow-up",
                .glyphSize = Style::baseGlyphSize,
                .variant = ButtonVariant::Ghost,
-               .tooltip = "Parent folder (Alt+Up)",
+               .tooltip = luciole::shortcutTooltip("Parent folder", Action::Up),
                .onClick = [this] { dispatchAction(Action::Up); }}
           )
       ),
@@ -2605,7 +2610,7 @@ std::unique_ptr<Flex> BrowserPage::buildToolbar() {
                .glyph = "folder-plus",
                .glyphSize = Style::baseGlyphSize,
                .variant = ButtonVariant::Ghost,
-               .tooltip = "New Folder… (Ctrl+Shift+N)",
+               .tooltip = luciole::shortcutTooltip("New Folder…", Action::CreateFolder),
                .visible = choosing(),
                .participatesInLayout = choosing(),
                .onClick = [this] { dispatchAction(Action::CreateFolder); }}
@@ -2632,12 +2637,18 @@ std::unique_ptr<Flex> BrowserPage::buildToolbar() {
                .options =
                    [this] {
                      std::vector<ui::SegmentedOption> views{
-                         {.label = "", .glyph = "layout-grid", .tooltip = "Grid view (Ctrl+1)"},
-                         {.label = "", .glyph = "list", .tooltip = "List view (Ctrl+2)"}
+                         {.label = "",
+                          .glyph = "layout-grid",
+                          .tooltip = luciole::shortcutTooltip("Grid view", Action::Grid)},
+                         {.label = "", .glyph = "list", .tooltip = luciole::shortcutTooltip("List view", Action::List)}
                      };
                      // Column view is unavailable while choosing files.
                      if (!choosing()) {
-                       views.push_back({.label = "", .glyph = "columns-3", .tooltip = "Column view (Ctrl+3)"});
+                       views.push_back(
+                           {.label = "",
+                            .glyph = "columns-3",
+                            .tooltip = luciole::shortcutTooltip("Column view", Action::Miller)}
+                       );
                      }
                      return views;
                    }(),

@@ -30,6 +30,59 @@ namespace {
     }
     return result;
   }
+  std::string_view keybindRejectionMessage(KeybindRejection reason) {
+    switch (reason) {
+    case KeybindRejection::Super:
+      return "Super shortcuts are reserved by the compositor.";
+    case KeybindRejection::Modifier:
+      return "This shortcut does not accept modifiers.";
+    case KeybindRejection::Printable:
+      return "Printable keys need Ctrl, Alt or another modifier.";
+    }
+    return "This shortcut cannot be used.";
+  }
+  std::string_view keybindScopeTitle(luciole::KeybindScope scope) {
+    switch (scope) {
+    case luciole::KeybindScope::Controls:
+      return "Controls";
+    case luciole::KeybindScope::FileBrowser:
+      return "File browser";
+    case luciole::KeybindScope::TabsAndWindows:
+      return "Tabs and windows";
+    }
+    return {};
+  }
+  // Commands whose defaults include a bare printable key must stay recordable without a modifier.
+  ModifierPolicy keybindModifierPolicy(luciole::KeybindCommand command) {
+    return command == luciole::KeybindCommand::Validate || command == luciole::KeybindCommand::QuickPreview
+        ? ModifierPolicy::Optional
+        : ModifierPolicy::Required;
+  }
+  luciole::KeybindChord toKeybindChord(const KeyChord& chord) { return {chord.sym, chord.modifiers}; }
+  std::optional<luciole::KeybindCommand> crossScopeConflict(
+      const luciole::KeybindConfig& config, luciole::KeybindCommand command, const luciole::KeybindChord& chord
+  ) {
+    const auto target = luciole::normalizeKeybindChord(chord);
+    for (const auto scope : luciole::kKeybindScopes) {
+      if (scope == luciole::keybindCommandScope(command)) {
+        continue;
+      }
+      for (const auto candidate : luciole::keybindCommands(scope)) {
+        for (const auto& used : config.chords(candidate)) {
+          if (used && luciole::normalizeKeybindChord(*used) == target) {
+            return candidate;
+          }
+        }
+      }
+    }
+    return std::nullopt;
+  }
+  std::optional<KeyChord> fromKeybindChord(std::optional<luciole::KeybindChord> chord) {
+    if (!chord) {
+      return std::nullopt;
+    }
+    return KeyChord{chord->sym, chord->modifiers};
+  }
 } // namespace
 
 SettingsDialog::SettingsDialog(
@@ -231,6 +284,8 @@ SettingsDialog::SettingsDialog(
           )
       )
   );
+  section("Keybinds", "keyboard");
+  addKeybinds();
   selectPage(0);
 }
 
@@ -354,6 +409,178 @@ void SettingsDialog::addTerminal() {
   );
 }
 
+void SettingsDialog::addKeybinds() {
+  Flex* page = m_pages.back();
+  auto scopeRow = ui::row({.align = FlexAlign::Center, .wrap = true, .gap = Style::spaceXs});
+  for (std::size_t index = 0; index < luciole::kKeybindScopes.size(); ++index) {
+    Button* button = nullptr;
+    scopeRow->addChild(
+        ui::button(
+            {.out = &button,
+             .text = std::string(keybindScopeTitle(luciole::kKeybindScopes[index])),
+             .controlHeight = Style::controlHeightSm,
+             .variant = ButtonVariant::Ghost,
+             .onClick = [this, index] { selectKeybindScope(index); }}
+        )
+    );
+    m_keybindScopeButtons.push_back(button);
+  }
+  page->addChild(std::move(scopeRow));
+
+  m_keybindBlocks.reserve(luciole::kKeybindCommandCount);
+  for (const auto scope : luciole::kKeybindScopes) {
+    auto scopePage = ui::column({.align = FlexAlign::Stretch, .gap = Style::spaceMd});
+    Flex* scopePointer = scopePage.get();
+    page->addChild(std::move(scopePage));
+    m_keybindScopePages.push_back(scopePointer);
+    m_section = nullptr;
+    scopePointer->addChild(luciole::card(std::string(keybindScopeTitle(scope)), &m_section));
+    m_section->setGap(Style::spaceMd);
+
+    for (const auto command : luciole::keybindCommands(scope)) {
+      const std::size_t blockIndex = m_keybindBlocks.size();
+      auto slots = ui::column(
+          {.align = FlexAlign::Start, .gap = 2.0F, .minWidth = 220.0F + Style::spaceXs + Style::controlHeightSm}
+      );
+      KeybindBlock entry{.command = command, .slots = {}};
+      entry.slots.reserve(luciole::kMaxKeybindChords);
+      for (std::size_t slot = 0; slot < luciole::kMaxKeybindChords; ++slot) {
+        KeybindRecorder* recorder = nullptr;
+        Button* remove = nullptr;
+        auto row = ui::row(
+            {.align = FlexAlign::Center, .gap = Style::spaceXs},
+            ui::keybindRecorder(
+                {.out = &recorder,
+                 .scale = 1.0F,
+                 .unsetPlaceholder = "Add shortcut",
+                 .recordingPlaceholder = "Press keys…",
+                 .modifierPolicy = keybindModifierPolicy(command),
+                 .onCommit =
+                     [this, blockIndex, slot, command](KeyChord chord) {
+                       auto& target = m_keybindBlocks[blockIndex].slots[slot];
+                       const auto keybindChord = toKeybindChord(chord);
+                       std::optional<luciole::KeybindChord> original;
+                       if (slot < m_current.keybinds.chords(command).size()) {
+                         original = m_current.keybinds.chords(command)[slot];
+                       }
+                       if (const auto conflict =
+                               luciole::keybindConflict(m_current.keybinds, command, slot, keybindChord)) {
+                         target.recorder->setChord(fromKeybindChord(original));
+                         m_pendingStatus = std::format(
+                             "{} is already used by {}.", luciole::keybindChordLabel(keybindChord),
+                             luciole::keybindCommandLabel(*conflict)
+                         );
+                         m_pendingStatusError = true;
+                         setStatus(m_pendingStatus, true);
+                         return;
+                       }
+                       m_pendingStatus.clear();
+                       m_pendingStatusError = false;
+                       auto next = m_current.keybinds;
+                       luciole::setKeybindChord(next, command, slot, keybindChord);
+                       if (!luciole::keybindConfigValid(next)) {
+                         target.recorder->setChord(fromKeybindChord(original));
+                         m_pendingStatus = keybindRejectionMessage(KeybindRejection::Printable);
+                         m_pendingStatusError = true;
+                         setStatus(m_pendingStatus, true);
+                         return;
+                       }
+                       if (const auto other = crossScopeConflict(m_current.keybinds, command, keybindChord)) {
+                         m_pendingStatus = std::format(
+                             "{} is also used by {} in another scope.", luciole::keybindChordLabel(keybindChord),
+                             luciole::keybindCommandLabel(*other)
+                         );
+                         setStatus(m_pendingStatus, false);
+                       }
+                       send(P::Keybinds, std::optional(next));
+                     },
+                 .onReject =
+                     [this](KeybindRejection reason) {
+                       m_pendingStatus = keybindRejectionMessage(reason);
+                       m_pendingStatusError = true;
+                       setStatus(m_pendingStatus, true);
+                     }}
+            ),
+            ui::button(
+                {.out = &remove,
+                 .glyph = "close",
+                 .glyphSize = Style::fontSizeCaption,
+                 .controlHeight = Style::controlHeightSm,
+                 .variant = ButtonVariant::Ghost,
+                 .tooltip = "Clear shortcut",
+                 .minWidth = Style::controlHeightSm,
+                 .onClick = [this, command, slot] {
+                   m_pendingStatus.clear();
+                   m_pendingStatusError = false;
+                   auto next = m_current.keybinds;
+                   luciole::setKeybindChord(next, command, slot, std::nullopt);
+                   send(P::Keybinds, std::optional(next));
+                 }}
+            )
+        );
+        auto* rowPointer = row.get();
+        slots->addChild(std::move(row));
+        entry.slots.push_back({.recorder = recorder, .remove = remove, .row = rowPointer});
+      }
+      auto block = ui::row(
+          {.align = FlexAlign::Start,
+           .justify = FlexJustify::SpaceBetween,
+           .gap = Style::spaceMd,
+           .paddingV = kRowPaddingV},
+          ui::label(
+              {.text = std::string(luciole::keybindCommandLabel(command)),
+               .fontSize = Style::fontSizeBody,
+               .fontWeight = FontWeight::SemiBold,
+               .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+               .minWidth = 200.0F,
+               .maxLines = 1,
+               .ellipsize = TextEllipsize::End}
+          ),
+          std::move(slots)
+      );
+      m_section->addChild(std::move(block));
+      m_keybindBlocks.push_back(std::move(entry));
+    }
+  }
+  m_rows[P::Keybinds.id()] = [this] { syncKeybinds(); };
+  selectKeybindScope(0);
+  syncKeybinds();
+}
+
+void SettingsDialog::syncKeybinds() {
+  for (auto& block : m_keybindBlocks) {
+    const auto& chords = m_current.keybinds.chords(block.command);
+    std::size_t count = 0;
+    while (count < chords.size() && chords[count]) {
+      ++count;
+    }
+    for (std::size_t slot = 0; slot < block.slots.size(); ++slot) {
+      auto& widgets = block.slots[slot];
+      const bool used = slot < count;
+      const bool shown = used || slot == count;
+      widgets.row->setVisible(shown);
+      widgets.row->setParticipatesInLayout(shown);
+      widgets.remove->setVisible(used);
+      std::optional<KeyChord> chord;
+      if (used) {
+        chord = fromKeybindChord(chords[slot]);
+      }
+      widgets.recorder->setChord(chord);
+      widgets.recorder->setEnabled(shown);
+    }
+  }
+}
+
+void SettingsDialog::selectKeybindScope(std::size_t selected) {
+  for (std::size_t index = 0; index < m_keybindScopePages.size(); ++index) {
+    const bool active = index == selected;
+    m_keybindScopePages[index]->setVisible(active);
+    m_keybindScopePages[index]->setParticipatesInLayout(active);
+    m_keybindScopeButtons[index]->setSelected(active);
+  }
+  m_body->requestScrollToOffset(0);
+}
+
 void SettingsDialog::addBool(luciole::PreferenceKey<bool> key, const std::string& title) {
   Toggle* control = nullptr;
   auto row = ui::row(
@@ -452,7 +679,12 @@ void SettingsDialog::sync(
   for (const auto& [id, show] : m_rows) {
     show();
   }
-  setStatus(!error.empty() ? error : clearingThumbnails ? "Clearing cache…" : busy ? "Saving…" : "", !error.empty());
+  const bool transient = !error.empty() || clearingThumbnails || busy;
+  const std::string text = !error.empty() ? error
+      : clearingThumbnails                ? "Clearing cache…"
+      : busy                              ? "Saving…"
+                                          : m_pendingStatus;
+  setStatus(text, !error.empty() || (!transient && m_pendingStatusError));
 }
 void SettingsDialog::setStatus(const std::string& text, bool error) {
   // One line in the header: the tooltip shows an ellipsized error in full.

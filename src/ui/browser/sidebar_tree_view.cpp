@@ -1,8 +1,7 @@
 #include "ui/browser/sidebar_tree_view.h"
 
 #include "browser/location_presentation.h"
-#include "core/input/key_modifiers.h"
-#include "core/input/key_symbols.h"
+#include "config/keybinds.h"
 #include "ui/builders.h"
 #include "ui/controls/button.h"
 #include "ui/controls/scroll_view.h"
@@ -354,18 +353,19 @@ float luciole::SidebarTreeView::dragScrollSpeed(float x, float y) const {
 }
 void luciole::SidebarTreeView::cancelDragCandidate() { m_grid->cancelPointerGesture(); }
 bool luciole::SidebarTreeView::key(std::uint32_t sym, std::uint32_t modifiers) {
+  using K = luciole::KeybindCommand;
   if (m_model.rows().empty()) {
     return false;
   }
   auto id = m_model.selection().focused.value_or(m_model.rows().front());
   const auto bookmark = this->bookmark(id);
-  if (!modifiers && KeySymbol::isEnterOrSpace(sym)) {
+  if (luciole::keybindMatches(K::Validate, sym, modifiers)) {
     if (open && bookmark) {
       open(bookmark->location);
     }
     return true;
   }
-  if (sym == XKB_KEY_Menu || (sym == XKB_KEY_F10 && modifiers == KeyMod::Shift)) {
+  if (luciole::keybindMatches(luciole::KeybindCommand::ContextMenu, sym, modifiers)) {
     if (context && bookmark) {
       const auto rect = folderRect(bookmark->location);
       if (rect) {
@@ -374,47 +374,55 @@ bool luciole::SidebarTreeView::key(std::uint32_t sym, std::uint32_t modifiers) {
     }
     return true;
   }
-  if (!modifiers && sym == XKB_KEY_F2 && m_pinIndices.contains(id)) {
+  if (luciole::keybindMatches(luciole::KeybindCommand::Rename, sym, modifiers) && m_pinIndices.contains(id)) {
     if (rename && bookmark && bookmark->location != Location::network()) {
       rename(*bookmark);
     }
     return true;
   }
-  if (modifiers) {
+  const auto match = luciole::keybindBestMatch(luciole::keybindMovementCommands(), sym, modifiers);
+  if (!match) {
     return false;
   }
   const auto info = m_tree.row(id);
-  if (KeySymbol::isRight(sym) != Style::rtl() && (KeySymbol::isRight(sym) || KeySymbol::isLeft(sym))) {
-    if (!info.expanded) {
-      (void)m_tree.expand(id);
-    } else {
-      const auto child =
-          std::ranges::find_if(m_model.rows(), [&](EntryId row) { return m_model.treeParent(row) == id; });
-      if (child != m_model.rows().end()) {
-        id = *child;
+  if (match && (match->command == K::MoveLeft || match->command == K::MoveRight)) {
+    if ((match->command == K::MoveRight) != Style::rtl()) {
+      if (!info.expanded) {
+        (void)m_tree.expand(id);
+      } else {
+        const auto child =
+            std::ranges::find_if(m_model.rows(), [&](EntryId row) { return m_model.treeParent(row) == id; });
+        if (child != m_model.rows().end()) {
+          id = *child;
+        }
       }
-    }
-  } else if (KeySymbol::isLeft(sym) || KeySymbol::isRight(sym)) {
-    if (info.expanded) {
+    } else if (info.expanded) {
       (void)m_tree.collapse(id);
     } else if (const auto parent = m_model.treeParent(id)) {
       id = *parent;
     }
-  } else {
+  } else if (match) {
     auto index = static_cast<std::ptrdiff_t>(std::ranges::find(m_model.rows(), id) - m_model.rows().begin());
-    if (sym == XKB_KEY_Down) {
+    switch (match->command) {
+    case K::MoveDown:
       ++index;
-    } else if (sym == XKB_KEY_Up) {
+      break;
+    case K::MoveUp:
       --index;
-    } else if (KeySymbol::isHome(sym)) {
+      break;
+    case K::MoveFirst:
       index = 0;
-    } else if (KeySymbol::isEnd(sym)) {
+      break;
+    case K::MoveLast:
       index = static_cast<std::ptrdiff_t>(m_model.rows().size()) - 1;
-    } else if (sym == XKB_KEY_Page_Down) {
+      break;
+    case K::MovePageDown:
       index += static_cast<std::ptrdiff_t>(m_grid->pageItemStride());
-    } else if (sym == XKB_KEY_Page_Up) {
+      break;
+    case K::MovePageUp:
       index -= static_cast<std::ptrdiff_t>(m_grid->pageItemStride());
-    } else {
+      break;
+    default:
       return false;
     }
     index = std::clamp<std::ptrdiff_t>(index, 0, static_cast<std::ptrdiff_t>(m_model.rows().size()) - 1);

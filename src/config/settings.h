@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config/diagnostic.h"
+#include "config/keybinds.h"
 #include "fs/atomic_file.h"
 #include "model/directory_options.h"
 #include "model/thumbnail_options.h"
@@ -50,6 +51,7 @@ namespace luciole {
     DetailsColumnWidths columnWidths = kDefaultDetailsColumnWidths;
     ThumbnailOptions thumbnails;
     std::string terminalCommand;
+    KeybindConfig keybinds;
     bool operator==(const BrowserSettings&) const = default;
   };
 
@@ -128,6 +130,7 @@ namespace luciole {
     ThumbnailMaxFileMib,
     ThumbnailCacheMib,
     TerminalCommand,
+    Keybinds,
     Count
   };
 
@@ -210,6 +213,7 @@ namespace luciole {
     static constexpr PreferenceKey<luciole::ThumbnailPolicy> ThumbnailPolicy{Id::ThumbnailPolicy};
     static constexpr PreferenceKey<int> ThumbnailMaxFileMib{Id::ThumbnailMaxFileMib};
     static constexpr PreferenceKey<int> ThumbnailCacheMib{Id::ThumbnailCacheMib};
+    static constexpr PreferenceKey<luciole::KeybindConfig> Keybinds{Id::Keybinds};
   };
 
   // The BrowserSettings field a preference reads and writes.
@@ -235,7 +239,7 @@ namespace luciole {
     BrowserPreferenceId m_preference;
     std::variant<
         std::monostate, bool, int, double, SortField, ViewMode, ViewDensity, FilenameTruncation, DetailsColumnOrder,
-        ActivationMode, TypingMode, ThumbnailPolicy, std::string>
+        ActivationMode, TypingMode, ThumbnailPolicy, std::string, KeybindConfig>
         m_value;
   };
 

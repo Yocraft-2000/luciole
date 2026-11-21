@@ -18,6 +18,7 @@
 #include "render/scene/input_area.h"
 #include "render/scene/input_dispatcher.h"
 #include "system/icon_resolver.h"
+#include "ui/browser/action_shortcuts.h"
 #include "ui/builders.h"
 #include "ui/controls/acl_editor.h"
 #include "ui/controls/bulk_acl_editor.h"
@@ -46,9 +47,18 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 
 volatile std::sig_atomic_t g_stopRequested = 0;
+
+namespace {
+  constexpr std::array<luciole::KeybindCommand, 9> kSelectTabCommands{
+      luciole::KeybindCommand::SelectTab1, luciole::KeybindCommand::SelectTab2, luciole::KeybindCommand::SelectTab3,
+      luciole::KeybindCommand::SelectTab4, luciole::KeybindCommand::SelectTab5, luciole::KeybindCommand::SelectTab6,
+      luciole::KeybindCommand::SelectTab7, luciole::KeybindCommand::SelectTab8, luciole::KeybindCommand::SelectTab9,
+  };
+} // namespace
 
 WorkspaceApplication::WorkspaceApplication(
     WaylandConnection& connection, RenderContext& renderer, TextInputService& input,
@@ -60,6 +70,13 @@ WorkspaceApplication::WorkspaceApplication(
   m_preferences.setChangedCallback([this](const std::string& error) {
     if (m_preferences.settings()) {
       m_defaults = m_preferences.settings()->browser;
+      luciole::setActiveKeybinds(m_defaults.keybinds);
+      luciole::installControlKeybindMatchers();
+      // Strip tooltips embed shortcut labels; clear the cache so rebuildStrip regenerates them.
+      for (auto& [id, host] : m_hosts) {
+        (void)id;
+        host->labels.clear();
+      }
       // Live-radius bindings update open widgets; controls built afterwards pick it up directly.
       Style::setCornerRadiusScale(static_cast<float>(m_defaults.cornerRadiusScale));
     }
@@ -491,6 +508,17 @@ void WorkspaceApplication::keyboard(const KeyboardEvent& event) {
       host->surface.requestUpdate();
     }
   }
+  // Quit is handled before popup routing.
+  if (event.pressed && !event.preedit) {
+    if (const auto focused = m_hosts.find(m_focused); focused != m_hosts.end()
+        && !focused->second->closed
+        && !focused->second->chooser
+        && luciole::keybindMatches(luciole::KeybindCommand::Quit, event.sym, event.modifiers)) {
+      g_stopRequested = 1;
+      focused->second->surface.requestUpdate();
+      return;
+    }
+  }
   if (const auto focused = m_hosts.find(m_focused);
       focused != m_hosts.end() && focused->second->chooser && focused->second->chooser->keyboard(event)) {
     return;
@@ -517,90 +545,95 @@ void WorkspaceApplication::keyboard(const KeyboardEvent& event) {
     return;
   }
   if (event.pressed && !event.preedit) {
-    if (!host.chooser && event.modifiers == KeyMod::Ctrl && event.sym == XKB_KEY_q) {
-      g_stopRequested = 1;
-      host.surface.requestUpdate();
-      return;
-    }
-    if (!host.chooser
-        && event.modifiers == (KeyMod::Ctrl | KeyMod::Shift)
-        && (event.sym == XKB_KEY_w || event.sym == XKB_KEY_W)) {
+    if (!host.chooser && luciole::keybindMatches(luciole::KeybindCommand::CloseWindow, event.sym, event.modifiers)) {
       host.surface.close();
       return;
     }
-    const bool ctrl = event.modifiers == KeyMod::Ctrl, ctrlShift = event.modifiers == (KeyMod::Ctrl | KeyMod::Shift);
     std::optional<WorkspaceCommand> command;
-    if (event.modifiers == (KeyMod::Ctrl | KeyMod::Alt) && (event.sym == XKB_KEY_w || event.sym == XKB_KEY_W)) {
+    if (luciole::keybindMatches(luciole::KeybindCommand::ClosePane, event.sym, event.modifiers)) {
       command = WorkspaceCommand::ClosePane;
     }
-    if (ctrl && event.sym == XKB_KEY_t) {
+    if (luciole::keybindMatches(luciole::KeybindCommand::NewTab, event.sym, event.modifiers)) {
       command = WorkspaceCommand::NewTab;
     }
-    if (ctrlShift && (event.sym == XKB_KEY_t || event.sym == XKB_KEY_T)) {
+    if (luciole::keybindMatches(luciole::KeybindCommand::ReopenTab, event.sym, event.modifiers)) {
       command = WorkspaceCommand::Reopen;
     }
-    if (ctrl && event.sym == XKB_KEY_w) {
+    if (luciole::keybindMatches(luciole::KeybindCommand::CloseTab, event.sym, event.modifiers)) {
       command = WorkspaceCommand::Close;
     }
-    if (ctrl && event.sym == XKB_KEY_n) {
+    if (luciole::keybindMatches(luciole::KeybindCommand::NewWindow, event.sym, event.modifiers)) {
       command = WorkspaceCommand::NewWindow;
     }
-    if (event.modifiers == 0 && event.sym == XKB_KEY_F3) {
+    if (luciole::keybindMatches(luciole::KeybindCommand::SplitView, event.sym, event.modifiers)) {
       command = WorkspaceCommand::Split;
     }
-    if (event.modifiers == 0 && event.sym == XKB_KEY_F6) {
+    if (luciole::keybindMatches(luciole::KeybindCommand::SwitchArea, event.sym, event.modifiers)) {
       command = WorkspaceCommand::SwitchArea;
     }
-    if (ctrlShift && (event.sym == XKB_KEY_d || event.sym == XKB_KEY_D)) {
+    if (luciole::keybindMatches(luciole::KeybindCommand::DuplicateTab, event.sym, event.modifiers)) {
       command = WorkspaceCommand::Duplicate;
     }
     if (command) {
       defer(host.id, record->second.active, *command);
       return;
     }
-    if (!page.overlay() && KeySymbol::isTab(event.sym) && (event.modifiers == 0 || event.modifiers == KeyMod::Shift)) {
-      if (page.completeLocationOnTab(event.modifiers)) {
+    const bool nextTab = luciole::keybindMatches(luciole::KeybindCommand::NextTab, event.sym, event.modifiers);
+    const bool previousTab = luciole::keybindMatches(luciole::KeybindCommand::PreviousTab, event.sym, event.modifiers);
+    if (nextTab || previousTab) {
+      const auto& tabs = record->second.tabs;
+      if (tabs.empty()) {
         return;
       }
-      (void)host.dispatcher.cycleTabFocus(event.modifiers == KeyMod::Shift);
-      host.surface.requestRedraw();
+      const auto found = std::ranges::find(tabs, record->second.selected);
+      const auto index = found == tabs.end() ? std::size_t{0} : static_cast<std::size_t>(found - tabs.begin());
+      select(host.id, tabs[(index + tabs.size() + (previousTab ? -1 : 1)) % tabs.size()]);
+      return;
+    }
+    for (std::size_t index = 0; index < kSelectTabCommands.size(); ++index) {
+      if (!luciole::keybindMatches(kSelectTabCommands[index], event.sym, event.modifiers)) {
+        continue;
+      }
+      const auto& tabs = record->second.tabs;
+      const auto tab = index + 1 == kSelectTabCommands.size() ? tabs.size() - 1 : index;
+      if (!tabs.empty() && tab < tabs.size()) {
+        select(host.id, tabs[tab]);
+      }
       return;
     }
 
-    if ((ctrl || ctrlShift)
-        && (KeySymbol::isTab(event.sym) || event.sym == XKB_KEY_Page_Down || event.sym == XKB_KEY_Page_Up)) {
-      const auto& tabs = record->second.tabs;
-      const auto found = std::ranges::find(tabs, record->second.selected);
-      const auto index = static_cast<std::size_t>(found - tabs.begin());
-      const bool backwards = ctrlShift || event.sym == XKB_KEY_Page_Up;
-      select(host.id, tabs[(index + tabs.size() + (backwards ? -1 : 1)) % tabs.size()]);
+    if (!page.overlay()
+        && KeySymbol::isTab(event.sym)
+        && (event.modifiers == 0 || event.modifiers == KeyMod::Shift)
+        && page.completeLocationOnTab(event.modifiers)) {
       return;
     }
-    if (event.modifiers == KeyMod::Alt && event.sym >= XKB_KEY_1 && event.sym <= XKB_KEY_9) {
-      const auto index =
-          event.sym == XKB_KEY_9 ? record->second.tabs.size() - 1 : static_cast<std::size_t>(event.sym - XKB_KEY_1);
-      if (index < record->second.tabs.size()) {
-        select(host.id, record->second.tabs[index]);
-      }
+    const bool focusNext = luciole::keybindMatches(luciole::KeybindCommand::FocusNext, event.sym, event.modifiers);
+    const bool focusPrevious =
+        luciole::keybindMatches(luciole::KeybindCommand::FocusPrevious, event.sym, event.modifiers);
+    if (!page.overlay() && (focusNext || focusPrevious)) {
+      (void)host.dispatcher.cycleTabFocus(focusPrevious);
+      host.surface.requestRedraw();
       return;
     }
-    if (event.sym == XKB_KEY_Escape && host.stripMove.pending()) {
+    const bool cancel = luciole::keybindMatches(luciole::KeybindCommand::Cancel, event.sym, event.modifiers);
+    if (cancel && host.stripMove.pending()) {
       host.stripMove.cancel();
       return;
     }
-    if (event.sym == XKB_KEY_Escape && host.pressedTab) {
+    if (cancel && host.pressedTab) {
       host.pressedTab.reset();
       host.tabDrag = false;
       host.surface.requestLayout();
       return;
     }
-    if (event.sym == XKB_KEY_Escape && host.resizing) {
+    if (cancel && host.resizing) {
       m_model.resize(host.id, host.resizeStart);
       host.resizing = false;
       host.surface.requestLayout();
       return;
     }
-    if (event.sym == XKB_KEY_Escape && host.previewDragWidth) {
+    if (cancel && host.previewDragWidth) {
       host.previewDragWidth.reset();
       host.surface.requestLayout();
       return;
@@ -1367,12 +1400,20 @@ bool WorkspaceApplication::stripMovePointer(Host& host, const PointerEvent& even
 void WorkspaceApplication::tabMenu(Host& host, luciole::TabId tab, float x, float y) {
   auto& page = *m_pages.at(m_model.windows().at(host.id).active);
   std::vector<ContextMenuControlEntry> entries{
-      {.id = 0, .label = "New Tab", .shortcut = "Ctrl+T"},
-      {.id = 1, .label = "Duplicate Tab", .shortcut = "Ctrl+Shift+D"},
-      {.id = 2, .label = "Close Tab", .shortcut = "Ctrl+W"},
-      {.id = 3, .label = "Reopen Closed Tab", .shortcut = "Ctrl+Shift+T"},
+      {.id = 0, .label = "New Tab", .shortcut = luciole::keybindShortcutOptionalLabel(luciole::KeybindCommand::NewTab)},
+      {.id = 1,
+       .label = "Duplicate Tab",
+       .shortcut = luciole::keybindShortcutOptionalLabel(luciole::KeybindCommand::DuplicateTab)},
+      {.id = 2,
+       .label = "Close Tab",
+       .shortcut = luciole::keybindShortcutOptionalLabel(luciole::KeybindCommand::CloseTab)},
+      {.id = 3,
+       .label = "Reopen Closed Tab",
+       .shortcut = luciole::keybindShortcutOptionalLabel(luciole::KeybindCommand::ReopenTab)},
       {.label = "", .separator = true},
-      {.id = 4, .label = "Split View", .shortcut = "F3"},
+      {.id = 4,
+       .label = "Split View",
+       .shortcut = luciole::keybindShortcutOptionalLabel(luciole::KeybindCommand::SplitView)},
       {.id = 5, .label = "Swap Panes"},
       {.id = 6, .label = "Move Tab to New Window"},
       {.id = 7, .label = "Move Tab to Next Window"}
@@ -1509,7 +1550,7 @@ void WorkspaceApplication::rebuildStrip(Host& host, const luciole::TabWindow& wi
            .glyphSize = Style::baseGlyphSize,
            .controlHeight = Style::controlHeightSm,
            .variant = ButtonVariant::Ghost,
-           .tooltip = "New tab (Ctrl+T)",
+           .tooltip = luciole::shortcutTooltip("New tab", luciole::KeybindCommand::NewTab),
            .onClick = [this, windowId] {
              defer(windowId, m_model.windows().at(windowId).active, WorkspaceCommand::NewTab);
            }}
@@ -1532,7 +1573,7 @@ void WorkspaceApplication::rebuildStrip(Host& host, const luciole::TabWindow& wi
            .controlHeight = Style::controlHeightSm,
            .selected = window.secondary.has_value(),
            .variant = ButtonVariant::Ghost,
-           .tooltip = "Split view (F3)",
+           .tooltip = luciole::shortcutTooltip("Split view", luciole::KeybindCommand::SplitView),
            .onClick = [this, windowId] {
              defer(windowId, m_model.windows().at(windowId).active, WorkspaceCommand::Split);
            }}
@@ -1565,7 +1606,7 @@ void WorkspaceApplication::rebuildStrip(Host& host, const luciole::TabWindow& wi
              .glyphSize = Style::baseGlyphSize,
              .controlHeight = Style::controlHeightSm,
              .variant = ButtonVariant::Ghost,
-             .tooltip = "Close window (Ctrl+Shift+W)",
+             .tooltip = luciole::shortcutTooltip("Close window", luciole::KeybindCommand::CloseWindow),
              .onClick = [&host] { host.surface.close(); }}
         )
     );

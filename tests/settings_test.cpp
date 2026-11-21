@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <toml++/toml.hpp>
 #include <unistd.h>
+#include <xkbcommon/xkbcommon-keysyms.h>
 
 namespace {
   struct Fixture {
@@ -1230,6 +1231,206 @@ namespace {
         && read(invalidBase.paths().overrides) == before
     );
   }
+
+  void testKeybinds() {
+    using K = luciole::KeybindCommand;
+    const auto chord = [](std::uint32_t sym, std::uint32_t modifiers) { return luciole::KeybindChord{sym, modifiers}; };
+    Fixture fixture;
+    luciole::ConfigService service(fixture.paths());
+    TEST_CHECK(service.reload());
+    const auto& defaults = service.settings().browser.keybinds;
+    TEST_CHECK(luciole::keybindConfigValid(defaults));
+    TEST_CHECK(defaults.chords(K::Search)[0] == chord(XKB_KEY_f, luciole::KeybindMod::Ctrl));
+    TEST_CHECK(defaults.chords(K::Search)[1] == chord(XKB_KEY_k, luciole::KeybindMod::Ctrl));
+    TEST_CHECK(!defaults.chords(K::Search)[2]);
+    TEST_CHECK(defaults.chords(K::FocusPrevious)[0] == chord(XKB_KEY_Tab, luciole::KeybindMod::Shift));
+    TEST_CHECK(defaults.chords(K::MoveFirst)[0] == chord(XKB_KEY_Home, 0));
+    TEST_CHECK(defaults.chords(K::MoveLast)[0] == chord(XKB_KEY_End, 0));
+    TEST_CHECK(defaults.chords(K::MovePageUp)[0] == chord(XKB_KEY_Page_Up, 0));
+    TEST_CHECK(defaults.chords(K::MovePageDown)[0] == chord(XKB_KEY_Page_Down, 0));
+    TEST_CHECK(defaults.chords(K::NextTab)[1] == chord(XKB_KEY_Page_Down, luciole::KeybindMod::Ctrl));
+    TEST_CHECK(defaults.chords(K::PreviousTab)[1] == chord(XKB_KEY_Page_Up, luciole::KeybindMod::Ctrl));
+    TEST_CHECK(
+        luciole::keybindMatchesAllowingExtraModifiers(defaults, K::MoveDown, XKB_KEY_Down, luciole::KeybindMod::Shift)
+    );
+    TEST_CHECK(!luciole::keybindMatches(defaults, K::MoveDown, XKB_KEY_Down, luciole::KeybindMod::Shift));
+    TEST_CHECK(defaults.chords(K::Settings)[0] == chord(XKB_KEY_comma, luciole::KeybindMod::Ctrl));
+    TEST_CHECK(defaults.chords(K::ZoomIn)[1] == chord(XKB_KEY_plus, luciole::KeybindMod::Ctrl));
+    TEST_CHECK(defaults.chords(K::Terminal)[0] == chord(XKB_KEY_F4, 0));
+    TEST_CHECK(defaults.chords(K::SelectTab1)[0] == chord(XKB_KEY_1, luciole::KeybindMod::Alt));
+    TEST_CHECK(defaults.chords(K::SelectTab9)[0] == chord(XKB_KEY_9, luciole::KeybindMod::Alt));
+    TEST_CHECK(defaults.chords(K::Validate)[1] == chord(XKB_KEY_space, 0));
+    TEST_CHECK(luciole::keybindCommands(luciole::KeybindScope::Controls).size() == 12);
+    TEST_CHECK(
+        luciole::keybindCommands(luciole::KeybindScope::Controls).size()
+            + luciole::keybindCommands(luciole::KeybindScope::FileBrowser).size()
+            + luciole::keybindCommands(luciole::KeybindScope::TabsAndWindows).size()
+        == luciole::kKeybindCommandCount
+    );
+
+    TEST_CHECK(luciole::parseKeybindChord("Ctrl+,") == chord(XKB_KEY_comma, luciole::KeybindMod::Ctrl));
+    TEST_CHECK(luciole::parseKeybindChord("Ctrl++") == chord(XKB_KEY_plus, luciole::KeybindMod::Ctrl));
+    TEST_CHECK(luciole::parseKeybindChord("Shift+Tab") == chord(XKB_KEY_Tab, luciole::KeybindMod::Shift));
+    TEST_CHECK(!luciole::parseKeybindChord("Super+G"));
+    TEST_CHECK(!luciole::parseKeybindChord("Super_L"));
+    TEST_CHECK(!luciole::parseKeybindChord("Ctrl+"));
+    TEST_CHECK(luciole::keybindChordLabel(chord(XKB_KEY_comma, luciole::KeybindMod::Ctrl)) == "Ctrl+,");
+    TEST_CHECK(luciole::keybindChordLabel(chord(XKB_KEY_plus, luciole::KeybindMod::Ctrl)) == "Ctrl++");
+    TEST_CHECK(luciole::keybindChordLabel(chord(XKB_KEY_space, 0)) == "Space");
+    TEST_CHECK(luciole::keybindChordLabel(chord(XKB_KEY_Return, 0)) == "Enter");
+    TEST_CHECK(luciole::keybindChordLabel(chord(XKB_KEY_Page_Up, 0)) == "Page Up");
+    TEST_CHECK(luciole::keybindChordLabel(chord(XKB_KEY_Page_Down, 0)) == "Page Down");
+    TEST_CHECK(luciole::keybindChordLabel(chord(XKB_KEY_BackSpace, 0)) == "Backspace");
+    TEST_CHECK(luciole::keybindChordLabel(chord(XKB_KEY_ISO_Left_Tab, luciole::KeybindMod::Shift)) == "Shift+Tab");
+
+    TEST_CHECK(luciole::keybindMatches(defaults, K::Copy, XKB_KEY_c, luciole::KeybindMod::Ctrl));
+    TEST_CHECK(!luciole::keybindMatches(defaults, K::Copy, XKB_KEY_C, luciole::KeybindMod::Ctrl));
+    TEST_CHECK(
+        luciole::keybindMatches(
+            defaults, K::CreateFolder, XKB_KEY_N, luciole::KeybindMod::Ctrl | luciole::KeybindMod::Shift
+        )
+    );
+    TEST_CHECK(luciole::keybindMatches(defaults, K::FocusPrevious, XKB_KEY_ISO_Left_Tab, luciole::KeybindMod::Shift));
+    TEST_CHECK(luciole::keybindMatches(defaults, K::Validate, XKB_KEY_space, 0));
+    TEST_CHECK(!luciole::keybindMatches(defaults, K::Validate, XKB_KEY_space, luciole::KeybindMod::Ctrl));
+
+    auto compact = luciole::KeybindConfig{};
+    luciole::setKeybindChord(compact, K::Search, 0, std::nullopt);
+    TEST_CHECK(compact.chords(K::Search)[0] == chord(XKB_KEY_k, luciole::KeybindMod::Ctrl));
+    TEST_CHECK(!compact.chords(K::Search)[1]);
+    luciole::setKeybindChord(compact, K::Search, 1, chord(XKB_KEY_g, luciole::KeybindMod::Ctrl));
+    TEST_CHECK(compact.chords(K::Search)[1] == chord(XKB_KEY_g, luciole::KeybindMod::Ctrl));
+
+    TEST_CHECK(
+        luciole::keybindConflict(defaults, K::Search, 0, chord(XKB_KEY_l, luciole::KeybindMod::Ctrl)) == K::EditLocation
+    );
+    TEST_CHECK(!luciole::keybindConflict(defaults, K::Search, 0, chord(XKB_KEY_Tab, 0)));
+    luciole::setActiveKeybinds(defaults);
+    TEST_CHECK(luciole::activeKeybinds() == defaults);
+
+    auto barePrintable = defaults;
+    luciole::setKeybindChord(barePrintable, K::MoveDown, 0, chord(XKB_KEY_j, 0));
+    TEST_CHECK(!luciole::keybindConfigValid(barePrintable));
+    auto shiftedPrintable = defaults;
+    luciole::setKeybindChord(shiftedPrintable, K::MoveDown, 0, chord(XKB_KEY_j, luciole::KeybindMod::Shift));
+    TEST_CHECK(!luciole::keybindConfigValid(shiftedPrintable));
+    auto modifiedPrintable = defaults;
+    luciole::setKeybindChord(modifiedPrintable, K::MoveDown, 0, chord(XKB_KEY_j, luciole::KeybindMod::Ctrl));
+    TEST_CHECK(luciole::keybindConfigValid(modifiedPrintable));
+    auto unicodePrintable = defaults;
+    luciole::setKeybindChord(unicodePrintable, K::MoveDown, 0, chord(XKB_KEY_eacute, 0));
+    TEST_CHECK(!luciole::keybindConfigValid(unicodePrintable));
+
+    auto specific = defaults;
+    luciole::setKeybindChord(specific, K::MovePageDown, 0, chord(XKB_KEY_Down, luciole::KeybindMod::Shift));
+    luciole::setActiveKeybinds(specific);
+    const auto best =
+        luciole::keybindBestMatch(luciole::keybindMovementCommands(), XKB_KEY_Down, luciole::KeybindMod::Shift);
+    TEST_CHECK(best && best->command == K::MovePageDown && best->extraModifiers == 0);
+    luciole::setActiveKeybinds(defaults);
+
+    fixture.write("config.toml", "[browser.keybinds]\nsearch = [\"Ctrl+G\"]\n");
+    TEST_CHECK(service.reload());
+    const auto& partial = service.settings().browser.keybinds;
+    TEST_CHECK(partial.chords(K::Search)[0] == chord(XKB_KEY_g, luciole::KeybindMod::Ctrl));
+    TEST_CHECK(!partial.chords(K::Search)[1]);
+    TEST_CHECK(partial.chords(K::EditLocation)[0] == chord(XKB_KEY_l, luciole::KeybindMod::Ctrl));
+
+    fixture.write("config.toml", "[browser.keybinds]\nsearch = []\n");
+    TEST_CHECK(service.reload());
+    const auto& cleared = service.settings().browser.keybinds;
+    TEST_CHECK(!cleared.chords(K::Search)[0]);
+    TEST_CHECK(cleared.chords(K::EditLocation)[0] == chord(XKB_KEY_l, luciole::KeybindMod::Ctrl));
+
+    // Controls and the file browser can share a chord; the same scope cannot.
+    fixture.write("config.toml", "[browser.keybinds]\nsearch = [\"Tab\"]\n");
+    TEST_CHECK(service.reload());
+    TEST_CHECK(service.settings().browser.keybinds.chords(K::Search)[0] == chord(XKB_KEY_Tab, 0));
+    fixture.write("config.toml", "[browser.keybinds]\nedit_location = [\"Ctrl+F\"]\n");
+    TEST_CHECK(!service.reload());
+    TEST_CHECK(service.settings().browser.keybinds.chords(K::Search)[0] == chord(XKB_KEY_Tab, 0));
+
+    fixture.write("config.toml", "[browser.keybinds]\nsearch = [\"Super+G\"]\n");
+    TEST_CHECK(!service.reload());
+    fixture.write("config.toml", "[browser.keybinds]\nmove_down = [\"j\"]\n");
+    TEST_CHECK(!service.reload());
+    fixture.write("config.toml", "[browser.keybinds]\nunknown_command = [\"Ctrl+G\"]\n");
+    TEST_CHECK(!service.reload());
+    fixture.write(
+        "config.toml", "[browser.keybinds]\nsearch = [\"Ctrl+G\", \"Ctrl+H\", \"Ctrl+J\", \"Ctrl+N\", \"Ctrl+M\"]\n"
+    );
+    TEST_CHECK(!service.reload());
+
+    fixture.write("config.toml", "[browser]\n");
+    TEST_CHECK(service.reload());
+    auto edited = service.settings().browser.keybinds;
+    luciole::setKeybindChord(edited, K::Search, 0, chord(XKB_KEY_g, luciole::KeybindMod::Ctrl));
+    const std::array edit{luciole::OverrideEdit{luciole::BrowserPreference::Keybinds, edited}};
+    TEST_CHECK(service.saveOverrides(edit) == luciole::AtomicWriteState::Durable);
+    luciole::ConfigService reloaded(fixture.paths());
+    TEST_CHECK(reloaded.reload());
+    TEST_CHECK(
+        reloaded.settings().browser.keybinds.chords(K::Search)[0] == chord(XKB_KEY_g, luciole::KeybindMod::Ctrl)
+    );
+    TEST_CHECK(
+        reloaded.settings().browser.keybinds.chords(K::Search)[1] == chord(XKB_KEY_k, luciole::KeybindMod::Ctrl)
+    );
+    const auto saved = read(fixture.paths().overrides);
+    TEST_CHECK(saved.contains("[browser.keybinds]"));
+    TEST_CHECK(saved.contains("search"));
+    TEST_CHECK(!saved.contains("cancel"));
+
+    const auto inherit = luciole::inheritAllPreferences();
+    TEST_CHECK(reloaded.saveOverrides(inherit) == luciole::AtomicWriteState::Durable);
+    TEST_CHECK(reloaded.reload());
+    TEST_CHECK(
+        reloaded.settings().browser.keybinds.chords(K::Search)[0] == chord(XKB_KEY_f, luciole::KeybindMod::Ctrl)
+    );
+
+    Fixture inheritedFixture;
+    inheritedFixture.write("config.toml", "[browser.keybinds]\nsearch = [\"Ctrl+G\"]\n");
+    luciole::ConfigService inheritedService(inheritedFixture.paths());
+    TEST_CHECK(inheritedService.reload());
+    const auto builtin = luciole::KeybindConfig{};
+    const std::array inheritedEdit{luciole::OverrideEdit{luciole::BrowserPreference::Keybinds, builtin}};
+    TEST_CHECK(inheritedService.saveOverrides(inheritedEdit) == luciole::AtomicWriteState::Durable);
+    const auto inheritedSaved = read(inheritedFixture.paths().overrides);
+    TEST_CHECK(inheritedSaved.contains("search"));
+    luciole::ConfigService inheritedReloaded(inheritedFixture.paths());
+    TEST_CHECK(inheritedReloaded.reload());
+    TEST_CHECK(
+        inheritedReloaded.settings().browser.keybinds.chords(K::Search)[0]
+        == chord(XKB_KEY_f, luciole::KeybindMod::Ctrl)
+    );
+    TEST_CHECK(
+        inheritedReloaded.settings().browser.keybinds.chords(K::Search)[1]
+        == chord(XKB_KEY_k, luciole::KeybindMod::Ctrl)
+    );
+
+    Fixture layeredFixture;
+    layeredFixture.write("config.toml", "[browser.keybinds]\nsearch = [\"Ctrl+G\"]\n");
+    layeredFixture.write("settings.toml", "[browser.keybinds]\ncut = [\"Alt+X\"]\n");
+    luciole::ConfigService layeredService(layeredFixture.paths());
+    TEST_CHECK(layeredService.reload());
+    TEST_CHECK(
+        layeredService.settings().browser.keybinds.chords(K::Search)[0] == chord(XKB_KEY_g, luciole::KeybindMod::Ctrl)
+    );
+    TEST_CHECK(
+        layeredService.settings().browser.keybinds.chords(K::Cut)[0] == chord(XKB_KEY_x, luciole::KeybindMod::Alt)
+    );
+    const std::array unrelatedEdit{luciole::OverrideEdit{luciole::BrowserPreference::ShowHidden, true}};
+    TEST_CHECK(layeredService.saveOverrides(unrelatedEdit) == luciole::AtomicWriteState::Durable);
+    const auto layeredSaved = read(layeredFixture.paths().overrides);
+    TEST_CHECK(layeredSaved.contains("cut"));
+    TEST_CHECK(!layeredSaved.contains("search"));
+    TEST_CHECK(layeredService.reload());
+    TEST_CHECK(
+        layeredService.settings().browser.keybinds.chords(K::Search)[0] == chord(XKB_KEY_g, luciole::KeybindMod::Ctrl)
+    );
+    TEST_CHECK(
+        layeredService.settings().browser.keybinds.chords(K::Cut)[0] == chord(XKB_KEY_x, luciole::KeybindMod::Alt)
+    );
+  }
 } // namespace
 
 int main() {
@@ -1266,6 +1467,7 @@ int main() {
     testDetailsColumnWidths();
     testInteractionModes();
     testThumbnailSettings();
+    testKeybinds();
     testOverrideSaving();
     std::println("settings checks passed");
     return 0;

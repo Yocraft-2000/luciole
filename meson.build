@@ -47,6 +47,7 @@ if not cpp.has_header('stb/stb_image_resize2.h')
   error('system stb/stb_image_resize2.h is required')
 endif
 tomlplusplus = dependency('tomlplusplus', version: '>=3.4')
+xkbcommon = dependency('xkbcommon')
 
 if cpp.get_define('_LIBCPP_VERSION', prefix: '#include <version>') != ''
   add_project_arguments('-fexperimental-library', language: 'cpp')
@@ -168,10 +169,10 @@ config_lib = static_library('luciole-config',
     'src/config/view_preference_writer.cpp',
   ),
   include_directories: src_inc,
-  dependencies: [model_dep, fs_dep, tomlplusplus],
+  dependencies: [model_dep, fs_dep, tomlplusplus, xkbcommon],
 )
 config_dep = declare_dependency(link_with: config_lib, include_directories: src_inc,
-  dependencies: [model_dep, fs_dep],
+  dependencies: [model_dep, fs_dep, xkbcommon],
 )
 
 browser_lib = static_library('luciole-browser',

@@ -1,5 +1,6 @@
 #include "browser/action_registry.h"
 #include "browser/selection_tools.h"
+#include "config/keybinds.h"
 #include "core/input/key_modifiers.h"
 #include "directory_fixture.h"
 #include "fs/archive_type.h"
@@ -1007,6 +1008,18 @@ namespace {
     );
     TEST_CHECK(!luciole::shortcutAction({A::DeletePermanently, A::Trash}, XKB_KEY_Delete, KeyMod::Ctrl));
     TEST_CHECK(!luciole::shortcutAction({A::Back, A::Forward}, XKB_KEY_Left, 0));
+    // Mapped actions follow the active keybind config; ActionRegistry remains the fallback source.
+    {
+      auto rebind = luciole::KeybindConfig{};
+      luciole::setKeybindChord(rebind, luciole::KeybindCommand::Search, 0, luciole::parseKeybindChord("Ctrl+J"));
+      luciole::setKeybindChord(rebind, luciole::KeybindCommand::Search, 1, std::nullopt);
+      luciole::setActiveKeybinds(rebind);
+      TEST_CHECK(luciole::shortcutMatches(A::Search, XKB_KEY_j, KeyMod::Ctrl));
+      TEST_CHECK(!luciole::shortcutMatches(A::Search, XKB_KEY_f, KeyMod::Ctrl));
+      TEST_CHECK(luciole::actionShortcutLabel(A::Search) == "Ctrl+J");
+      luciole::setActiveKeybinds(luciole::KeybindConfig{});
+    }
+    TEST_CHECK(luciole::shortcutMatches(A::Search, XKB_KEY_f, KeyMod::Ctrl));
   }
 } // namespace
 int main() {

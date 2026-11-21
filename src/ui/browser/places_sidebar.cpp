@@ -1,8 +1,7 @@
 #include "ui/browser/places_sidebar.h"
 
 #include "browser/location_presentation.h"
-#include "core/input/key_modifiers.h"
-#include "core/input/key_symbols.h"
+#include "config/keybinds.h"
 #include "model/directory_options.h"
 #include "ui/browser/sidebar_tree_view.h"
 #include "ui/builders.h"
@@ -245,11 +244,11 @@ void luciole::PlacesSidebar::addDriveRow(const Drive& drive) {
     if (!event.pressed) {
       return;
     }
-    if (event.modifiers == 0 && KeySymbol::isEnterOrSpace(event.sym)) {
+    if (luciole::keybindMatches(luciole::KeybindCommand::Validate, event.sym, event.modifiers)) {
       if (m_driveOpen) {
         m_driveOpen(key);
       }
-    } else if (event.sym == XKB_KEY_Menu || (event.sym == XKB_KEY_F10 && event.modifiers == KeyMod::Shift)) {
+    } else if (luciole::keybindMatches(luciole::KeybindCommand::ContextMenu, event.sym, event.modifiers)) {
       float x = 0, y = 0;
       Node::absolutePosition(raw, x, y);
       if (m_driveContext) {
@@ -349,15 +348,15 @@ void luciole::PlacesSidebar::addRow(
     if (!key.pressed) {
       return;
     }
-    if (key.modifiers == 0 && KeySymbol::isEnterOrSpace(key.sym)) {
+    if (luciole::keybindMatches(luciole::KeybindCommand::Validate, key.sym, key.modifiers)) {
       if (m_open) {
         m_open(bookmark.location);
       }
-    } else if (key.sym == XKB_KEY_F2 && key.modifiers == 0) {
+    } else if (luciole::keybindMatches(luciole::KeybindCommand::Rename, key.sym, key.modifiers)) {
       if (m_rename && !bookmark.location.isTrash() && bookmark.location != Location::network()) {
         m_rename(bookmark);
       }
-    } else if (key.sym == XKB_KEY_Menu || (key.sym == XKB_KEY_F10 && key.modifiers == KeyMod::Shift)) {
+    } else if (luciole::keybindMatches(luciole::KeybindCommand::ContextMenu, key.sym, key.modifiers)) {
       float x = 0, y = 0;
       Node::absolutePosition(raw, x, y);
       if (m_context) {

@@ -7,6 +7,7 @@
 #include "browser/action_registry.h"
 #include "browser/browser_controller.h"
 #include "browser/miller_columns.h"
+#include "config/keybinds.h"
 #include "config/settings.h"
 #include "core/input/key_symbols.h"
 #include "render/scene/input_dispatcher.h"
@@ -17,9 +18,16 @@
 #include "wayland/wayland_seat.h"
 
 #include <algorithm>
+#include <array>
 #include <glib.h>
 #include <iterator>
+#include <optional>
+#include <span>
 #include <utility>
+
+namespace {
+  using K = luciole::KeybindCommand;
+} // namespace
 
 using Action = luciole::BrowserAction;
 
@@ -120,8 +128,7 @@ void FileKeyboardController::enterCursorFolder() {
 
 bool FileKeyboardController::escapeKey(const KeyboardEvent& event) {
   if (event.pressed
-      && event.modifiers == 0
-      && KeySymbol::isEscape(event.sym)
+      && luciole::keybindMatches(luciole::KeybindCommand::Cancel, event.sym, event.modifiers)
       && (!m_typeahead.text().empty() || !m_typeaheadPreedit.empty())) {
     clearTypeahead();
     return true;
@@ -131,7 +138,7 @@ bool FileKeyboardController::escapeKey(const KeyboardEvent& event) {
 
 bool FileKeyboardController::preeditKey(const KeyboardEvent& event) {
   if (!m_typeaheadPreedit.empty()) {
-    if (KeySymbol::isEscape(event.sym)) {
+    if (luciole::keybindMatches(luciole::KeybindCommand::Cancel, event.sym, event.modifiers)) {
       clearTypeahead();
     }
     return true;
@@ -142,7 +149,7 @@ bool FileKeyboardController::preeditKey(const KeyboardEvent& event) {
 bool FileKeyboardController::commandKey(const KeyboardEvent& event) {
   if (m_page.fileList() != nullptr
       && m_page.dispatcher().focusedArea() == m_page.fileList()->focusArea()
-      && (event.sym == XKB_KEY_Menu || (event.sym == XKB_KEY_F10 && event.modifiers == KeyMod::Shift))) {
+      && luciole::keybindMatches(luciole::KeybindCommand::ContextMenu, event.sym, event.modifiers)) {
     auto id = m_page.browser().model().selection().focused;
     float x = 240, y = 100;
     if (id) {
@@ -164,11 +171,14 @@ bool FileKeyboardController::commandKey(const KeyboardEvent& event) {
   if (m_page.fileList() != nullptr
       && m_page.dispatcher().focusedArea() == m_page.fileList()->focusArea()
       && !event.repeat) {
-    if (event.sym == XKB_KEY_Delete && (event.modifiers == 0 || event.modifiers == KeyMod::Shift)) {
+    const bool permanently =
+        luciole::keybindMatches(luciole::KeybindCommand::DeletePermanently, event.sym, event.modifiers);
+    const bool trash = luciole::keybindMatches(luciole::KeybindCommand::Trash, event.sym, event.modifiers);
+    if (permanently || trash) {
       const auto& folder = m_page.browser().model().snapshot().location;
-      if (event.modifiers == KeyMod::Shift || (folder && folder->isTrash())) {
+      if (permanently || (folder && folder->isTrash())) {
         m_page.dispatchAction(Action::DeletePermanently);
-      } else if (event.modifiers == 0) {
+      } else {
         m_page.dispatchAction(Action::Trash);
       }
       return true;
@@ -316,10 +326,10 @@ void FileKeyboardController::textInputDeactivated(TextInputService&) { clearType
 bool FileKeyboardController::folderKey(const KeyboardEvent& event) {
   auto& model = m_page.browser().model();
   const auto focused = model.selection().focused;
-  if (event.modifiers == 0
-      && m_page.viewMode() == luciole::ViewMode::List
-      && (KeySymbol::isLeft(event.sym) || KeySymbol::isRight(event.sym))) {
-    if (KeySymbol::isRight(event.sym) != Style::rtl()) {
+  const bool left = luciole::keybindMatches(K::MoveLeft, event.sym, event.modifiers);
+  const bool right = luciole::keybindMatches(K::MoveRight, event.sym, event.modifiers);
+  if ((left || right) && m_page.viewMode() == luciole::ViewMode::List) {
+    if (right != Style::rtl()) {
       if (!event.repeat) {
         enterCursorFolder();
       }
@@ -328,8 +338,7 @@ bool FileKeyboardController::folderKey(const KeyboardEvent& event) {
     }
     return true;
   }
-  if (event.modifiers == 0
-      && KeySymbol::isBackspace(event.sym)
+  if (luciole::keybindMatches(luciole::KeybindCommand::ParentFolder, event.sym, event.modifiers)
       && m_typeahead.text().empty()
       && m_typeaheadPreedit.empty()
       && !m_locationBar.filterOpen()
@@ -337,7 +346,7 @@ bool FileKeyboardController::folderKey(const KeyboardEvent& event) {
     goUp();
     return true;
   }
-  if (event.sym == XKB_KEY_space && event.modifiers == KeyMod::Ctrl) {
+  if (luciole::keybindMatches(luciole::KeybindCommand::ToggleSelection, event.sym, event.modifiers)) {
     if (focused) {
       if (m_miller.enabled()) {
         m_miller.interact(m_miller.focused());
@@ -348,11 +357,13 @@ bool FileKeyboardController::folderKey(const KeyboardEvent& event) {
     }
     return true;
   }
-  const bool shift = (event.modifiers & KeyMod::Shift) != 0;
-  if (KeySymbol::isEnter(event.sym) && (event.modifiers & ~KeyMod::Shift) == KeyMod::Ctrl) {
+  const bool openInNewTab = luciole::keybindMatches(luciole::KeybindCommand::OpenInNewTab, event.sym, event.modifiers);
+  const bool openInNewTabBackground =
+      luciole::keybindMatches(luciole::KeybindCommand::OpenInNewTabBackground, event.sym, event.modifiers);
+  if (openInNewTab || openInNewTabBackground) {
     const auto* entry = focused ? model.entry(*focused) : nullptr;
     if (!event.repeat && !m_page.choosing() && entry != nullptr && entry->isFolderLink()) {
-      const auto command = shift
+      const auto command = openInNewTabBackground
           ? (m_page.settings().switchToNewTab ? WorkspaceCommand::NewBackgroundTab : WorkspaceCommand::NewTab)
           : WorkspaceCommand::OpenTab;
       m_page.requestWorkspace(command, entry->navigationLocation(), std::nullopt);
@@ -363,11 +374,9 @@ bool FileKeyboardController::folderKey(const KeyboardEvent& event) {
 }
 
 bool FileKeyboardController::listKey(const KeyboardEvent& event) {
-  if (listFocused()
-      && event.pressed
-      && event.modifiers == 0
-      && (KeySymbol::isLeft(event.sym) || KeySymbol::isRight(event.sym))
-      && m_page.browser().treeKey(KeySymbol::isRight(event.sym) != Style::rtl())) {
+  const bool left = luciole::keybindMatches(K::MoveLeft, event.sym, event.modifiers);
+  const bool right = luciole::keybindMatches(K::MoveRight, event.sym, event.modifiers);
+  if (listFocused() && event.pressed && (left || right) && m_page.browser().treeKey(right != Style::rtl())) {
     m_keyboardReveal = m_page.browser().model().selection().focused;
     m_page.requestSync();
     return true;
@@ -388,7 +397,7 @@ bool FileKeyboardController::listKey(const KeyboardEvent& event) {
     }
     return true;
   }
-  if (event.modifiers == 0 && KeySymbol::isEnter(event.sym)) {
+  if (luciole::keybindMatches(luciole::KeybindCommand::Open, event.sym, event.modifiers)) {
     const auto& selection = model.selection();
     const bool hasOpenTarget = !selection.selected.empty()
         || (selection.focused && (m_fileKeyboardFocus || selection.selected.contains(*selection.focused)));
@@ -410,7 +419,20 @@ bool FileKeyboardController::listKey(const KeyboardEvent& event) {
     }
     return true;
   }
-  if (model.rows().empty() || (event.modifiers & (KeyMod::Alt | KeyMod::Super)) != 0) {
+  if (model.rows().empty()) {
+    return false;
+  }
+  std::array<K, luciole::kMovementCommandCount> commands{};
+  std::size_t commandCount = 0;
+  for (const K command : luciole::keybindMovementCommands()) {
+    if ((command == K::MoveLeft || command == K::MoveRight) && m_page.viewMode() != luciole::ViewMode::Grid) {
+      continue;
+    }
+    commands[commandCount++] = command;
+  }
+  const auto match =
+      luciole::keybindBestMatch(std::span<const K>(commands.data(), commandCount), event.sym, event.modifiers);
+  if (!match || (match->extraModifiers & (KeyMod::Alt | KeyMod::Super)) != 0) {
     return false;
   }
   auto index = std::int64_t{0};
@@ -422,30 +444,39 @@ bool FileKeyboardController::listKey(const KeyboardEvent& event) {
   }
   const bool hasFocus = model.selection().focused.has_value();
   const auto columns = static_cast<std::int64_t>(std::max<std::size_t>(1, m_page.fileList()->layoutColumnCount()));
-  if (event.sym == XKB_KEY_Down) {
+  switch (match->command) {
+  case K::MoveDown:
     index += hasFocus ? columns : 0;
-  } else if (event.sym == XKB_KEY_Up) {
+    break;
+  case K::MoveUp:
     index += hasFocus ? -columns : 0;
-  } else if (m_page.viewMode() == luciole::ViewMode::Grid && event.sym == XKB_KEY_Right) {
+    break;
+  case K::MoveRight:
     index += hasFocus ? (Style::rtl() ? -1 : 1) : 0;
-  } else if (m_page.viewMode() == luciole::ViewMode::Grid && event.sym == XKB_KEY_Left) {
+    break;
+  case K::MoveLeft:
     index += hasFocus ? (Style::rtl() ? 1 : -1) : 0;
-  } else if (event.sym == XKB_KEY_Home) {
+    break;
+  case K::MoveFirst:
     index = 0;
-  } else if (event.sym == XKB_KEY_End) {
+    break;
+  case K::MoveLast:
     index = static_cast<std::int64_t>(model.rows().size()) - 1;
-  } else if (event.sym == XKB_KEY_Page_Down) {
+    break;
+  case K::MovePageDown:
     index += static_cast<std::int64_t>(m_page.fileList()->pageItemStride());
-  } else if (event.sym == XKB_KEY_Page_Up) {
+    break;
+  case K::MovePageUp:
     index -= static_cast<std::int64_t>(m_page.fileList()->pageItemStride());
-  } else {
+    break;
+  default:
     return false;
   }
   const auto row =
       static_cast<std::size_t>(std::clamp(index, std::int64_t{0}, static_cast<std::int64_t>(model.rows().size()) - 1));
   const auto id = model.rows()[row];
-  const bool ctrl = (event.modifiers & KeyMod::Ctrl) != 0;
-  const bool shift = (event.modifiers & KeyMod::Shift) != 0;
+  const bool ctrl = (match->extraModifiers & KeyMod::Ctrl) != 0;
+  const bool shift = (match->extraModifiers & KeyMod::Shift) != 0;
   if (ctrl && !shift) {
     (void)model.setFocus(id);
   } else {

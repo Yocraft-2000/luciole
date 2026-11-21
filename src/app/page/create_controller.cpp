@@ -12,6 +12,7 @@
 #include "platform/desktop_integration.h"
 #include "render/scene/input_area.h"
 #include "render/scene/input_dispatcher.h"
+#include "ui/browser/action_shortcuts.h"
 #include "ui/browser/file_error_text.h"
 #include "ui/controls/context_menu.h"
 #include "ui/controls/input.h"
@@ -47,8 +48,11 @@ void CreateController::showDocumentMenu(
   }
   auto items = std::make_shared<std::vector<luciole::DocumentTemplate>>(std::move(listing.items));
   const auto& emptyFile = luciole::ActionRegistry::definition(luciole::BrowserAction::CreateFile);
+  const auto shortcut = luciole::actionShortcutLabel(luciole::BrowserAction::CreateFile);
   std::vector<ContextMenuControlEntry> entries{
-      {.id = -1, .label = std::string(emptyFile.label), .shortcut = std::string(emptyFile.shortcut)},
+      {.id = -1,
+       .label = std::string(emptyFile.label),
+       .shortcut = shortcut.empty() ? std::nullopt : std::optional(shortcut)},
       {.label = "", .separator = true}
   };
   for (std::size_t index = 0; index < items->size(); ++index) {

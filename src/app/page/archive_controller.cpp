@@ -5,6 +5,7 @@
 #include "app/page/page_context.h"
 #include "browser/browser_controller.h"
 #include "browser/location_presentation.h"
+#include "config/keybinds.h"
 #include "config/settings.h"
 #include "core/deferred_call.h"
 #include "core/input/key_modifiers.h"
@@ -309,18 +310,21 @@ bool ArchiveController::key(const KeyboardEvent& event) {
   if (!m_view) {
     return false;
   }
-  if (event.pressed && KeySymbol::isEscape(event.sym)) {
-    deferClose();
-  } else if (event.pressed && event.sym == XKB_KEY_q && event.modifiers == KeyMod::Ctrl) {
-    m_page.surface().close();
-  } else if (event.pressed && KeySymbol::isTab(event.sym)) {
-    (void)m_page.dispatcher().cycleTabFocusInSubtree(m_view, (event.modifiers & KeyMod::Shift) != 0);
-  } else if (
-      !event.pressed
-      || event.preedit
-      || m_page.dispatcher().focusedArea() != m_view->focusArea()
-      || !m_view->key(event.sym, event.modifiers)
-  ) {
+  if (event.pressed && !event.preedit) {
+    if (!event.repeat && luciole::keybindMatches(luciole::KeybindCommand::Cancel, event.sym, event.modifiers)) {
+      deferClose();
+    } else if (
+        !event.repeat && luciole::keybindMatches(luciole::KeybindCommand::FocusNext, event.sym, event.modifiers)
+    ) {
+      (void)m_page.dispatcher().cycleTabFocusInSubtree(m_view, false);
+    } else if (
+        !event.repeat && luciole::keybindMatches(luciole::KeybindCommand::FocusPrevious, event.sym, event.modifiers)
+    ) {
+      (void)m_page.dispatcher().cycleTabFocusInSubtree(m_view, true);
+    } else if (m_page.dispatcher().focusedArea() != m_view->focusArea() || !m_view->key(event.sym, event.modifiers)) {
+      m_page.dispatcher().keyEvent(event.sym, event.utf32, event.modifiers, event.pressed, event.preedit);
+    }
+  } else {
     m_page.dispatcher().keyEvent(event.sym, event.utf32, event.modifiers, event.pressed, event.preedit);
   }
   m_page.surface().requestLayout();

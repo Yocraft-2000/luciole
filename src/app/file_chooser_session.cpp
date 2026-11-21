@@ -2,6 +2,7 @@
 
 #include "app/page/browser_page.h"
 #include "app/workspace_layout.h"
+#include "config/keybinds.h"
 #include "core/input/key_symbols.h"
 #include "core/log.h"
 #include "platform/desktop_integration.h"
@@ -419,7 +420,9 @@ bool FileChooserSession::keyboard(const KeyboardEvent& event) {
   if (m_name == nullptr || m_dispatcher->focusedArea() != m_name->inputArea() || KeySymbol::isTab(event.sym)) {
     return false;
   }
-  if (event.pressed && !event.preedit && event.modifiers == 0 && KeySymbol::isEscape(event.sym)) {
+  if (event.pressed
+      && !event.preedit
+      && luciole::keybindMatches(luciole::KeybindCommand::Cancel, event.sym, event.modifiers)) {
     cancel();
     return true;
   }
