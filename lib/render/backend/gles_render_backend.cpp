@@ -1,6 +1,7 @@
 #include "render/backend/gles_render_backend.h"
 
 #include "core/log.h"
+#include "core/scoped_timer.h"
 #include "render/backend/gles_framebuffer.h"
 #include "render/core/shader_program.h"
 #include "render/core/texture_manager.h"
@@ -21,8 +22,6 @@
 namespace {
 
   constexpr Logger kLog("render");
-  constexpr float kSlowRenderOperationDebugMs = 50.0F;
-  constexpr float kSlowRenderOperationWarnMs = 1000.0F;
   bool g_backendInfoLogged = false;
   bool g_capabilitiesVerified = false;
 
@@ -277,18 +276,6 @@ void main() {
     return *surface;
   }
 
-  float elapsedSince(std::chrono::steady_clock::time_point start) {
-    return std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - start).count();
-  }
-
-  template <typename... Args> void logSlowRenderOperation(float ms, std::format_string<Args...> fmt, Args&&... args) {
-    if (ms >= kSlowRenderOperationWarnMs) {
-      kLog.warn(fmt, std::forward<Args>(args)...);
-    } else if (ms >= kSlowRenderOperationDebugMs) {
-      kLog.debug(fmt, std::forward<Args>(args)...);
-    }
-  }
-
 } // namespace
 
 GlesRenderBackend::~GlesRenderBackend() { cleanup(); }
@@ -358,6 +345,7 @@ bool GlesRenderBackend::makeCurrent(RenderTarget& target) {
       && eglGetCurrentContext() == m_context
       && eglGetCurrentSurface(EGL_DRAW) == surface.eglSurface()
       && eglGetCurrentSurface(EGL_READ) == surface.eglSurface()) {
+    surface.reapplyResize();
     return true;
   }
 
@@ -370,7 +358,7 @@ bool GlesRenderBackend::makeCurrent(RenderTarget& target) {
     return false;
   }
   float ms = elapsedSince(start);
-  logSlowRenderOperation(ms, "eglMakeCurrent took {:.1F}ms", ms);
+  logSlowOperation(kLog, ms, "eglMakeCurrent took {:.1F}ms", ms);
 
   // Non-blocking swap: pacing is driven by wl_surface.frame callbacks, not by
   // eglSwapBuffers. Default interval=1 can block indefinitely when the
@@ -378,7 +366,8 @@ bool GlesRenderBackend::makeCurrent(RenderTarget& target) {
   const auto intervalStart = std::chrono::steady_clock::now();
   eglSwapInterval(m_display, 0);
   ms = elapsedSince(intervalStart);
-  logSlowRenderOperation(ms, "eglSwapInterval(0) took {:.1F}ms", ms);
+  logSlowOperation(kLog, ms, "eglSwapInterval(0) took {:.1F}ms", ms);
+  surface.reapplyResize();
   return true;
 }
 
@@ -386,7 +375,6 @@ bool GlesRenderBackend::beginFrame(RenderTarget& target) {
   if (!makeCurrent(target)) {
     return false;
   }
-  glesSurfaceTarget(target).reapplyResize();
 
   setViewport(target.bufferWidth(), target.bufferHeight());
   setBlendMode(RenderBlendMode::PremultipliedAlpha);
@@ -408,8 +396,8 @@ void GlesRenderBackend::endFrame(RenderTarget& target) {
     return;
   }
   const float ms = elapsedSince(swapStart);
-  logSlowRenderOperation(
-      ms, "eglSwapBuffers took {:.1F}ms ({}x{} logical, {}x{} buffer)", ms, target.logicalWidth(),
+  logSlowOperation(
+      kLog, ms, "eglSwapBuffers took {:.1F}ms ({}x{} logical, {}x{} buffer)", ms, target.logicalWidth(),
       target.logicalHeight(), target.bufferWidth(), target.bufferHeight()
   );
 }

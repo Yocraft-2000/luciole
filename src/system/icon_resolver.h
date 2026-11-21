@@ -17,8 +17,19 @@ struct IconSearchDir {
   std::string theme;
   int minSize = 0;
   int maxSize = 0;
+  // The directory's Context from index.theme (Places, Applications, ...);
+  // empty for base and pixmap dirs, which have no index.theme entry.
+  std::string context;
   // Whether the directory existed when the plan was built; a plan is rebuilt when one appears.
   bool exists = false;
+};
+
+// An icon-theme icon name with the Context of the directory it was first
+// seen in (theme preference order); empty for icons found only outside any
+// indexed theme directory. Used to offer per-category picker scopes.
+struct ThemedIcon {
+  std::string name;
+  std::string context;
 };
 
 struct IconThemeWatchPaths {
@@ -51,6 +62,11 @@ public:
   static std::shared_ptr<const IconThemeWatchPaths> themeWatchPaths();
   static std::uint64_t themeGeneration();
   static std::string activeThemeName();
+  // Every icon name the active theme chain (plus hicolor/Adwaita fallbacks)
+  // can resolve: stems of the .svg/.png files in the plan's search, base and
+  // pixmap dirs. Sorted by name, unique. Blocking (walks the theme dirs once per theme generation, then copies the
+  // cached list): worker only.
+  static std::vector<ThemedIcon> listThemeIcons();
   // The active theme chain's roots when its index.theme sets FollowsColorScheme (KDE), else empty.
   static std::vector<std::string> colorSchemeThemeRoots();
   // Icon lookups performed so far in this process.

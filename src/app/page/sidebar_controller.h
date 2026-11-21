@@ -4,6 +4,7 @@
 #include "browser/job_routing.h"
 #include "fs/location.h"
 #include "fs/trash_availability.h"
+#include "model/adaptive_sidebar.h"
 #include "model/directory_options.h"
 #include "render/scene/input_dispatcher.h"
 
@@ -31,6 +32,9 @@ class MenuController;
 class PageContext;
 class RenameController;
 class Renderer;
+class Flex;
+class Button;
+struct KeyboardEvent;
 
 // The places sidebar: its pins and devices, showing and hiding it, resizing it by pointer or keyboard, the pin
 // drop line, and handing the sidebar to the window, which lays it out beside the pages.
@@ -43,14 +47,23 @@ public:
       luciole::ViewPreferenceWriter& preferences, AnimationManager& animations, MenuController& menus,
       RenameController& renamer, DragDropController& drags
   );
+  ~SidebarController();
 
   // Takes the sidebar settings of a new page.
   void load(const luciole::BrowserSettings& settings);
   // Takes the sidebar settings that changed; `force` takes them all.
   void applySettings(const luciole::BrowserSettings& before, const luciole::BrowserSettings& settings, bool force);
 
-  bool visible() const { return m_showSidebar; }
+  bool visible() const { return m_state.visible(); }
   void setVisible(bool visible, bool persist = true);
+  void toggle();
+  void dismissDrawer();
+  bool drawerOpen() const { return m_state.compact() && m_state.visible(); }
+  bool drawerContains(float x, float y) const;
+  bool key(const KeyboardEvent& event);
+  void prepareWidth(float width);
+  void arrange(Renderer& renderer, float top, float height);
+  std::unique_ptr<Button> buildToggle();
   // Width the window reserves for the sidebar, and the width of the sidebar controls in it.
   float width() const;
   float controlWidth() const;
@@ -103,6 +116,8 @@ private:
   static constexpr float kGapInset = (kWorkspaceInset - kHandleWidth) * 0.5F;
 
   int maximumWidth() const;
+  void revealDrawer();
+  void focusDrawer();
   void resize(int width, bool persist);
   void openDrive(const std::string& key);
   void removeDrive(const std::string& key);
@@ -121,7 +136,14 @@ private:
   luciole::PlacesSidebar* m_places = nullptr;
   bool m_placesDirty = true;
   int m_sidebarWidth = luciole::kDefaultSidebarWidth;
-  bool m_showSidebar = true;
+  luciole::AdaptiveSidebar m_state;
+  float m_reveal = 0;
+  float m_scrimOpacity = 0;
+  bool m_focusDrawer = false;
+  Flex* m_sidebarPanel = nullptr;
+  InputArea* m_drawerScrim = nullptr;
+  Box* m_scrimFill = nullptr;
+  Button* m_toggle = nullptr;
   bool m_sidebarTree = false;
   bool m_showDrives = true;
   bool m_showNetwork = true;

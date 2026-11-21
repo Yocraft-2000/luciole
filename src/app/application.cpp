@@ -18,6 +18,7 @@
 #include "fs/gio_ptr.h"
 #include "platform/desktop_integration.h"
 #include "platform/file_chooser_portal.h"
+#include "render/animation/motion_service.h"
 #include "render/gl_shared_context.h"
 #include "render/render_context.h"
 #include "render/scene/input_dispatcher.h"
@@ -92,7 +93,6 @@ void luciole::installControlKeybindMatchers() {
   bind(KeybindAction::Down, K::MoveDown);
   bind(KeybindAction::TabNext, K::FocusNext);
   bind(KeybindAction::TabPrevious, K::FocusPrevious);
-  // The other actions are unused here; binding them would change unrelated lib widget behaviour.
 }
 
 int luciole::runApplication(const std::optional<std::string>& initialLocation, StartupMode mode) {
@@ -141,6 +141,8 @@ int luciole::runApplication(const std::optional<std::string>& initialLocation, S
     });
     luciole::initializeLibrary();
     Style::setCornerRadiusScale(static_cast<float>(config.settings().browser.cornerRadiusScale));
+    Style::setCloseButtonsEnabled(config.settings().browser.showCloseButtons);
+    MotionService::instance().setEnabled(!config.settings().browser.reduceAnimations);
     GlibPollSource glib;
     TextInputService textInput;
     WaylandConnection connection;

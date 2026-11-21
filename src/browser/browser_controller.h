@@ -9,6 +9,7 @@
 
 namespace luciole {
   class DirectoryTree;
+  class DriveMonitor;
   struct TreeRowInfo;
   struct BrowseViewport {
     ViewMode mode = ViewMode::Grid;
@@ -29,6 +30,8 @@ namespace luciole {
     void setChangedCallback(std::function<void()> callback);
     void setFileActivatedCallback(std::function<void(const Location&)> callback);
     void open(const Location& location);
+    // Keeps the current folder while a device unlocks. Navigation cancels the pending request.
+    void openDrive(DriveMonitor& drives, const std::string& key, std::function<void(std::string)> done);
     bool openText(const std::string& text);
     void setCaptureViewport(std::function<BrowseViewport()> callback);
     void setViewDefaults(ViewMode mode, int iconSize);

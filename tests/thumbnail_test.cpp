@@ -23,6 +23,7 @@
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <png.h>
 #include <print>
+#include <sstream>
 #include <stdexcept>
 #include <sys/stat.h>
 #include <thread>
@@ -475,7 +476,14 @@ namespace {
     const std::array writes{
         luciole::ThumbnailCacheWrite{make(uri), 256}, luciole::ThumbnailCacheWrite{make(second), 512}
     };
+    const auto index = store.root().parent_path() / "luciole/thumbnail-index.json";
+    std::filesystem::create_directories(index.parent_path());
+    std::ofstream(index, std::ios::trunc) << R"([{"name":"../escape.png","bytes":1,"identity":"x"}])";
     store.writeBatch(writes, 16U * 1024U * 1024U, cancel.get());
+    std::stringstream ledger;
+    ledger << std::ifstream(index).rdbuf();
+    // A damaged entry is dropped instead of blocking every later batch.
+    TEST_CHECK(!ledger.str().contains("escape") && ledger.str().contains("large/"));
     const auto cached = store.read(uri, 128, 123, 42, "same");
     TEST_CHECK(
         cached

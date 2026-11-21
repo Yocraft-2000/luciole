@@ -215,6 +215,9 @@ namespace {
               ":{}{}{}:{}:{}\n", dir.size, dir.scalable ? ":scalable:" : ":fixed:", dir.theme, dir.minSize, dir.maxSize
           )
       );
+      signature.add("context:");
+      signature.add(dir.context);
+      signature.add("\n");
     }
     for (const auto& dir : plan.pixmapDirs) {
       appendPathIdentity(signature, "pixmap:", dir);
@@ -363,6 +366,7 @@ namespace {
       int minSize = 0;
       int threshold = 2;
       std::string type = "Threshold";
+      std::string context;
       bool scalable = false;
     };
 
@@ -397,6 +401,9 @@ namespace {
       if (const auto it = section->find("Type"); it != section->end()) {
         entry.type = it->second;
         entry.scalable = (entry.type == "Scalable" || entry.type == "Threshold");
+      }
+      if (const auto it = section->find("Context"); it != section->end()) {
+        entry.context = it->second;
       }
       if (const auto it = section->find("MaxSize"); it != section->end()) {
         try {
@@ -452,7 +459,8 @@ namespace {
               .scalable = entry.scalable,
               .theme = {},
               .minSize = minSize,
-              .maxSize = std::max(minSize, maxSize)
+              .maxSize = std::max(minSize, maxSize),
+              .context = entry.context
           }
       );
     }
@@ -509,7 +517,8 @@ namespace {
                   .scalable = name.contains("scalable"),
                   .theme = themeName,
                   .minSize = sizeFromDirName(name),
-                  .maxSize = sizeFromDirName(name)
+                  .maxSize = sizeFromDirName(name),
+                  .context = {}
               }
           );
         }
@@ -523,7 +532,8 @@ namespace {
                   .scalable = dir.scalable,
                   .theme = themeName,
                   .minSize = dir.minSize,
-                  .maxSize = dir.maxSize
+                  .maxSize = dir.maxSize,
+                  .context = dir.context
               }
           );
         }
@@ -821,4 +831,69 @@ std::string IconResolver::findIcon(const std::string& name, int targetSize) cons
   }
 
   return {};
+}
+
+std::vector<ThemedIcon> IconResolver::listThemeIcons() {
+  // A large theme takes a few hundred ms to walk; reopening the picker reuses the list until the theme changes.
+  static std::mutex mutex;
+  static std::optional<std::pair<std::uint64_t, std::vector<ThemedIcon>>> cached;
+  const std::scoped_lock lock(mutex);
+  IconResolver resolver;
+  resolver.ensureFresh();
+  if (cached && cached->first == resolver.m_generation) {
+    return cached->second;
+  }
+  const auto plan = resolver.m_plan;
+  if (!plan) {
+    return {};
+  }
+  struct SearchPath {
+    std::string path;
+    std::string context;
+  };
+  std::vector<SearchPath> dirs;
+  dirs.reserve(plan->searchDirs.size() + plan->baseDirs.size() + plan->pixmapDirs.size());
+  for (const auto& dir : plan->searchDirs) {
+    if (dir.exists) {
+      dirs.push_back({dir.path, dir.context});
+    }
+  }
+  // Base and pixmap dirs carry no trailing slash in the plan; findIcon formats them with one.
+  // They have no index.theme context: icons found only there list as unthemed.
+  for (const auto& dir : plan->baseDirs) {
+    dirs.push_back({dir + '/', {}});
+  }
+  for (const auto& dir : plan->pixmapDirs) {
+    dirs.push_back({dir + '/', {}});
+  }
+  std::unordered_set<std::string> seen;
+  std::vector<ThemedIcon> names;
+  std::error_code ec;
+  for (const auto& dir : dirs) {
+    fs::directory_iterator items(dir.path, fs::directory_options::skip_permission_denied, ec);
+    if (ec) {
+      ec.clear();
+      continue;
+    }
+    for (const auto& item : items) {
+      auto stem = item.path().filename().string();
+      if (!stem.ends_with(".svg") && !stem.ends_with(".png")) {
+        continue;
+      }
+      stem.resize(stem.size() - 4);
+      // Dedupe before the type check: it stats every symlink, and symlinked themes repeat each name per size.
+      if (stem.empty() || seen.contains(stem)) {
+        continue;
+      }
+      if (!item.is_regular_file(ec)) {
+        ec.clear();
+        continue;
+      }
+      seen.insert(stem);
+      names.push_back({std::move(stem), dir.context});
+    }
+  }
+  std::ranges::sort(names, {}, &ThemedIcon::name);
+  cached.emplace(resolver.m_generation, names);
+  return names;
 }

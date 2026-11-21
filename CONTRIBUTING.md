@@ -47,6 +47,8 @@ Getters are the noun, without a `get` prefix: `snapshot()`, `selection()`.
 
 clang-format inserts braces around every control statement body and clang-tidy enforces the naming table for enumerators and private members.
 
+UI text matches noctalia-shell: menu items, actions, buttons, dialog titles, settings labels and choices, section and card titles, and field labels use Title Case, keeping articles, short conjunctions and short prepositions lowercase unless first or last (`Move Tab to New Window`, `Open With…`). Tooltips, placeholders, status lines, hints and messages stay in sentence case.
+
 ### Source Conventions
 
 - `src/` and `lib/` are the include roots; project includes are relative to them (`#include "app/application.h"`, `#include "ui/style.h"`).
@@ -94,6 +96,12 @@ Fills, tints, and borders use a palette role: `SurfaceContainerLow` to `SurfaceC
 Write test checks with `TEST_CHECK` and `TEST_NEAR` from `tests/test_check.h`, never `assert` or a per-file helper. `assert` compiles away under `NDEBUG`, so a release build would pass a broken test silently; `TEST_CHECK` prints the failed expression with its file and line and exits non-zero. The header refuses to compile with `NDEBUG`, so test executables set `override_options: ['b_ndebug=false']` in `tests/meson.build`. Wrap an expression that contains a top-level comma in an extra pair of parentheses: `TEST_CHECK((ids == std::vector<int>{1, 2}))`.
 
 Tests are listed in the table in `tests/meson.build`: each links the module libraries it exercises and never lists `src/` files.
+
+## Contribution Rules
+
+### One change per pull request
+
+Keep each pull request to a single feature, fix, or refactor. Unrelated changes, including drive-by cleanups and formatting of untouched code, go in separate pull requests so each can be reviewed and reverted on its own.
 
 ## Commit Messages
 

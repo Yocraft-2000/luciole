@@ -2,8 +2,10 @@
 
 #include "core/files/resource_paths.h"
 #include "core/log.h"
+#include "core/scoped_timer.h"
 #include "core/ui_phase.h"
 #include "render/backend/render_backend.h"
+#include "render/core/render_math.h"
 #include "render/core/texture_handle.h"
 #include "render/core/texture_manager.h"
 #include "render/gl_shared_context.h"
@@ -29,25 +31,7 @@
 namespace {
 
   constexpr Logger kLog("render");
-  constexpr float kSlowRenderOperationDebugMs = 50.0F;
-  constexpr float kSlowRenderOperationWarnMs = 1000.0F;
   constexpr float kPaintCullSlack = 16.0F;
-
-} // namespace
-
-namespace {
-
-  float elapsedSince(std::chrono::steady_clock::time_point start) {
-    return std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - start).count();
-  }
-
-  template <typename... Args> void logSlowRenderOperation(float ms, std::format_string<Args...> fmt, Args&&... args) {
-    if (ms >= kSlowRenderOperationWarnMs) {
-      kLog.warn(fmt, std::forward<Args>(args)...);
-    } else if (ms >= kSlowRenderOperationDebugMs) {
-      kLog.debug(fmt, std::forward<Args>(args)...);
-    }
-  }
 
   RenderScissor
   scissorForClip(float sw, float sh, float bw, float bh, float left, float top, float right, float bottom) {
@@ -103,7 +87,6 @@ void RenderContext::initialize(GlSharedContext& shared) {
       paths::libraryAssetPath("fonts/noctalia-tabler.ttf").string(), m_backend.get(), &m_backend->textureManager()
   );
   m_textRenderer.setFontFamily(m_textFontFamily);
-  m_textRenderer.setTextScale(m_textScale);
   m_textRenderer.setBaseDirection(m_textBaseDirRtl);
   ++m_textMetricsGeneration;
   m_graphicsResetPending = false;
@@ -153,14 +136,16 @@ void RenderContext::setTextFontFamily(std::string family) {
   ++m_textMetricsGeneration;
 }
 
+float RenderContext::clampTextScale(float scale) noexcept {
+  return std::isfinite(scale) ? std::clamp(scale, 0.5F, 3.0F) : 1.0F;
+}
+
 void RenderContext::setTextScale(float scale) {
-  scale = std::clamp(scale, 0.5F, 3.0F);
+  scale = clampTextScale(scale);
   if (m_textScale == scale) {
     return;
   }
-  makeCurrentNoSurface();
   m_textScale = scale;
-  m_textRenderer.setTextScale(m_textScale);
   ++m_textMetricsGeneration;
 }
 
@@ -188,6 +173,7 @@ void RenderContext::renderScene(RenderTarget& target, Node* sceneRoot, Node* ove
     return;
   }
   const float renderScale = target.contentScale();
+  m_frameTextScale = target.textScale().value_or(m_textScale);
 
   for (Node* root : {sceneRoot, overlay}) {
     if (root != nullptr && m_gpuResourceGeneration != 0 && root->gpuResourceGeneration() != m_gpuResourceGeneration) {
@@ -215,15 +201,15 @@ void RenderContext::renderScene(RenderTarget& target, Node* sceneRoot, Node* ove
     }
   }
   float ms = elapsedSince(drawStart);
-  logSlowRenderOperation(
-      ms, "scene draw took {:.1F}ms ({}x{} logical, {}x{} buffer)", ms, target.logicalWidth(), target.logicalHeight(),
-      target.bufferWidth(), target.bufferHeight()
+  logSlowOperation(
+      kLog, ms, "scene draw took {:.1F}ms ({}x{} logical, {}x{} buffer)", ms, target.logicalWidth(),
+      target.logicalHeight(), target.bufferWidth(), target.bufferHeight()
   );
 
   m_backend->endFrame(target);
   const RenderGraphicsResetStatus resetStatus = m_backend->graphicsResetStatus();
   ms = elapsedSince(totalStart);
-  logSlowRenderOperation(ms, "renderScene took {:.1F}ms total", ms);
+  logSlowOperation(kLog, ms, "renderScene took {:.1F}ms total", ms);
   if (resetStatus != RenderGraphicsResetStatus::NoError) {
     handleGraphicsReset(resetStatus);
   }
@@ -376,15 +362,17 @@ void RenderContext::renderNode(
         shadowColor.a *= effectiveOpacity;
         const Mat3 shadowTransform = worldTransform * Mat3::translation(text->shadowOffsetX(), text->shadowOffsetY());
         m_textRenderer.draw(
-            renderScale, sw, sh, 0.0F, 0.0F, text->text(), text->fontSize(), shadowColor, shadowTransform, font,
-            text->maxWidth(), text->maxLines(), text->textAlign(), text->ellipsize(), text->useMarkup()
+            renderScale, sw, sh, 0.0F, 0.0F, text->text(), text->fontSize() * m_frameTextScale, shadowColor,
+            shadowTransform, font, text->maxWidth(), text->maxLines(), text->textAlign(), text->ellipsize(),
+            text->useMarkup(), {bw / sw, bh / sh}
         );
       }
       auto color = text->color();
       color.a *= effectiveOpacity;
       m_textRenderer.draw(
-          renderScale, sw, sh, 0.0F, 0.0F, text->text(), text->fontSize(), color, worldTransform, font,
-          text->maxWidth(), text->maxLines(), text->textAlign(), text->ellipsize(), text->useMarkup()
+          renderScale, sw, sh, 0.0F, 0.0F, text->text(), text->fontSize() * m_frameTextScale, color, worldTransform,
+          font, text->maxWidth(), text->maxLines(), text->textAlign(), text->ellipsize(), text->useMarkup(),
+          {bw / sw, bh / sh}
       );
     }
     break;
@@ -392,6 +380,12 @@ void RenderContext::renderNode(
   case NodeType::Image: {
     const auto* img = static_cast<const ImageNode*>(node);
     if (img->textureId() != 0) {
+      // Rotated or skewed transforms keep their fractional origin; snapping them jumps whole pixels per frame.
+      Mat3 imageTransform = worldTransform;
+      if (isAxisAligned(imageTransform)) {
+        imageTransform.m[6] = snapToBufferPixel(imageTransform.m[6], renderScale);
+        imageTransform.m[7] = snapToBufferPixel(imageTransform.m[7], renderScale);
+      }
       m_backend->drawImage(
           RenderImageDraw{
               .texture = img->textureId(),
@@ -410,7 +404,7 @@ void RenderContext::renderNode(
               .fitMode = static_cast<RenderImageFitMode>(img->fitMode()),
               .textureWidth = static_cast<float>(img->textureWidth()),
               .textureHeight = static_cast<float>(img->textureHeight()),
-              .transform = worldTransform,
+              .transform = imageTransform,
               .scrim = img->scrim(),
           }
       );

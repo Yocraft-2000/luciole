@@ -125,6 +125,24 @@ namespace {
     fixture.write("config.toml", "[browser]\nswitch_to_new_tab = true\n");
     TEST_CHECK(restored.reload() && restored.settings().browser.switchToNewTab);
   }
+  void testSingleClickLocationEditPreference() {
+    Fixture fixture;
+    luciole::ConfigService service(fixture.paths());
+    TEST_CHECK(service.reload() && !service.settings().browser.singleClickLocationEdit);
+    fixture.write("config.toml", "[browser]\nsingle_click_location_edit = true\n");
+    TEST_CHECK(service.reload() && service.settings().browser.singleClickLocationEdit);
+    const std::array off{luciole::OverrideEdit{luciole::BrowserPreference::SingleClickLocationEdit, false}};
+    TEST_CHECK(service.saveOverrides(off) == luciole::AtomicWriteState::Durable);
+    luciole::ConfigService restored(fixture.paths());
+    TEST_CHECK(restored.reload() && !restored.settings().browser.singleClickLocationEdit);
+    const std::array reset{luciole::OverrideEdit{luciole::BrowserPreference::SingleClickLocationEdit, std::nullopt}};
+    TEST_CHECK(restored.saveOverrides(reset) == luciole::AtomicWriteState::Durable);
+    TEST_CHECK(restored.reload() && restored.settings().browser.singleClickLocationEdit);
+    fixture.write("config.toml", "[browser]\nsingle_click_location_edit = 'true'\n");
+    TEST_CHECK(!restored.reload() && restored.settings().browser.singleClickLocationEdit);
+    fixture.write("config.toml", "[browser]\nsingle_click_location_edit = false\n");
+    TEST_CHECK(restored.reload() && !restored.settings().browser.singleClickLocationEdit);
+  }
   void testDeletionConfirmationPreference() {
     Fixture fixture;
     luciole::ConfigService service(fixture.paths());
@@ -225,6 +243,36 @@ namespace {
     }
     fixture.write("config.toml", "[browser]\nfilename_truncation = 'middle'\n");
     TEST_CHECK(restarted.reload() && restarted.settings().browser.presentation.filenameTruncation == Mode::Middle);
+  }
+
+  void testDropAction() {
+    using Action = luciole::DropAction;
+    using State = luciole::AtomicWriteState;
+    const auto key = luciole::BrowserPreference::DropAction;
+    Fixture fixture;
+    luciole::ConfigService settings(fixture.paths());
+    TEST_CHECK(settings.reload() && settings.settings().browser.dropAction == Action::Menu);
+    fixture.write("config.toml", "[browser]\ndrop_action = 'copy'\n");
+    TEST_CHECK(settings.reload() && settings.settings().browser.dropAction == Action::Copy);
+    const std::array menu{luciole::OverrideEdit{key, Action::Menu}};
+    TEST_CHECK(settings.saveOverrides(menu) == State::Durable);
+    luciole::ConfigService restarted(fixture.paths());
+    TEST_CHECK(restarted.reload() && restarted.settings().browser.dropAction == Action::Menu);
+    const auto saved = read(fixture.paths().overrides);
+    TEST_CHECK(saved.contains("drop_action = \"menu\""));
+    const std::array invalid{luciole::OverrideEdit{key, static_cast<Action>(255)}};
+    TEST_CHECK(restarted.saveOverrides(invalid) == State::NotCommitted && read(fixture.paths().overrides) == saved);
+    const std::array reset{luciole::OverrideEdit{key, std::nullopt}};
+    TEST_CHECK(restarted.saveOverrides(reset) == State::Durable);
+    TEST_CHECK(restarted.settings().browser.dropAction == Action::Copy);
+    TEST_CHECK(!read(fixture.paths().overrides).contains("drop_action"));
+    for (const auto* value : {"'ask'", "'copy_here'", "true", "1", "[]"}) {
+      fixture.write("config.toml", std::format("[browser]\ndrop_action = {}\n", value));
+      TEST_CHECK(!luciole::validateConfigFile(fixture.paths().base).empty());
+      TEST_CHECK(!restarted.reload() && restarted.settings().browser.dropAction == Action::Copy);
+    }
+    fixture.write("config.toml", "[browser]\ndrop_action = 'move'\n");
+    TEST_CHECK(restarted.reload() && restarted.settings().browser.dropAction == Action::Move);
   }
 
   void testPresentationSettings() {
@@ -574,28 +622,38 @@ namespace {
     );
   }
 
-  void testListIconSize() {
-    Fixture fixture;
+  void testRowIconSizes() {
     using Preference = luciole::BrowserPreference;
-    fixture.write("config.toml", "");
-    const auto defaults = luciole::loadSettings(fixture.paths());
-    TEST_CHECK(defaults && defaults->browser.listIconSize == 0);
-    for (const int size : luciole::kListIconSizes) {
-      fixture.write("config.toml", "[browser]\nlist_icon_size = " + std::to_string(size) + "\n");
-      const auto loaded = luciole::loadSettings(fixture.paths());
-      TEST_CHECK(loaded && loaded->browser.listIconSize == size);
+    struct Case {
+      std::string key;
+      luciole::PreferenceKey<int> preference;
+      int luciole::BrowserSettings::* field;
+    };
+    for (const auto& [key, preference, field] : {
+             Case{"list_icon_size", Preference::ListIconSize, &luciole::BrowserSettings::listIconSize},
+             Case{"miller_icon_size", Preference::MillerIconSize, &luciole::BrowserSettings::millerIconSize},
+         }) {
+      Fixture fixture;
+      fixture.write("config.toml", "");
+      const auto defaults = luciole::loadSettings(fixture.paths());
+      TEST_CHECK(defaults && (defaults->browser.*field) == 0);
+      for (const int size : luciole::kRowIconSizes) {
+        fixture.write("config.toml", "[browser]\n" + key + " = " + std::to_string(size) + "\n");
+        const auto loaded = luciole::loadSettings(fixture.paths());
+        TEST_CHECK(loaded && (loaded->browser.*field) == size);
+      }
+      for (const auto* value : {"15", "21", "65", "-16", "24.0", "true", "'24'"}) {
+        fixture.write("config.toml", "[browser]\n" + key + " = " + value + "\n");
+        TEST_CHECK(!luciole::validateConfigFile(fixture.paths().base).empty());
+      }
+      fixture.write("config.toml", "");
+      luciole::ConfigService config(fixture.paths());
+      TEST_CHECK(config.reload());
+      const std::array zoom{luciole::OverrideEdit{preference, 48}};
+      TEST_CHECK(config.saveOverrides(zoom) == luciole::AtomicWriteState::Durable);
+      const auto saved = luciole::loadSettings(fixture.paths());
+      TEST_CHECK(saved && (saved->browser.*field) == 48);
     }
-    for (const auto* value : {"15", "21", "65", "-16", "24.0", "true", "'24'"}) {
-      fixture.write("config.toml", std::string("[browser]\nlist_icon_size = ") + value + "\n");
-      TEST_CHECK(!luciole::validateConfigFile(fixture.paths().base).empty());
-    }
-    fixture.write("config.toml", "");
-    luciole::ConfigService config(fixture.paths());
-    TEST_CHECK(config.reload());
-    const std::array zoom{luciole::OverrideEdit{Preference::ListIconSize, 48}};
-    TEST_CHECK(config.saveOverrides(zoom) == luciole::AtomicWriteState::Durable);
-    const auto saved = luciole::loadSettings(fixture.paths());
-    TEST_CHECK(saved && saved->browser.listIconSize == 48);
   }
 
   void testSidebarWidth() {
@@ -768,6 +826,31 @@ namespace {
     );
     for (const auto* value : {"0", "'false'", "1.0"}) {
       fixture.write("config.toml", std::string("[browser]\nalways_show_tab_bar = ") + value + "\n");
+      TEST_CHECK(!luciole::validateConfigFile(fixture.paths().base).empty());
+    }
+  }
+
+  void testShowCloseButtons() {
+    using Preference = luciole::BrowserPreference;
+    using State = luciole::AtomicWriteState;
+    Fixture fixture;
+    luciole::ConfigService config(fixture.paths());
+    TEST_CHECK(config.reload() && config.settings().browser.showCloseButtons);
+    fixture.write("config.toml", "[browser]\nshow_close_buttons = false\nshow_hidden = true\n");
+    TEST_CHECK(config.reload() && !config.settings().browser.showCloseButtons && config.settings().browser.showHidden);
+    TEST_CHECK(
+        config.saveOverrides(std::array{luciole::OverrideEdit{Preference::ShowCloseButtons, true}}) == State::Durable
+    );
+    const auto loaded = luciole::loadSettings(fixture.paths());
+    TEST_CHECK(loaded && loaded->browser.showCloseButtons && loaded->browser.showHidden);
+    TEST_CHECK(
+        config.saveOverrides(std::array{luciole::OverrideEdit{Preference::ShowCloseButtons, std::nullopt}})
+            == State::Durable
+        && !config.settings().browser.showCloseButtons
+        && !read(fixture.paths().overrides).contains("show_close_buttons")
+    );
+    for (const auto* value : {"0", "'false'", "1.0"}) {
+      fixture.write("config.toml", std::string("[browser]\nshow_close_buttons = ") + value + "\n");
       TEST_CHECK(!luciole::validateConfigFile(fixture.paths().base).empty());
     }
   }
@@ -1441,8 +1524,10 @@ int main() {
     testSchemaAndDiagnostics();
     testPresentationSettings();
     testFilenameTruncation();
+    testDropAction();
     testBackupPreference();
     testNewTabPreference();
+    testSingleClickLocationEditPreference();
     testDeletionConfirmationPreference();
     testPermanentDeletionMenuPreference();
     testRestoreLastWindowPreference();
@@ -1454,11 +1539,12 @@ int main() {
     testEnvironmentPaths();
     testBrowserDefaults();
     testGridIconSize();
-    testListIconSize();
+    testRowIconSizes();
     testSidebarWidth();
     testSidebarVisibility();
     testNetworkVisibility();
     testAlwaysShowTabBar();
+    testShowCloseButtons();
     testAlwaysShowStatusBar();
     testPreviewVisibility();
     testDetailsColumnVisibility();

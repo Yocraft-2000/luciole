@@ -8,7 +8,8 @@
 
 ## Type of Change
 
-<!-- Keep the lines that apply. -->
+<!-- A pull request covers one feature, fix, or refactor; split unrelated changes into
+     separate pull requests. Keep the lines that apply. -->
 
 - [ ] Bug fix
 - [ ] New feature

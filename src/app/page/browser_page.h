@@ -11,6 +11,7 @@
 #include "app/page/dialog_dropdown.h"
 #include "app/page/drag_drop_controller.h"
 #include "app/page/file_keyboard_controller.h"
+#include "app/page/folder_icon_controller.h"
 #include "app/page/location_bar_controller.h"
 #include "app/page/menu_controller.h"
 #include "app/page/mount_controller.h"
@@ -70,6 +71,7 @@
 #include <array>
 #include <chrono>
 #include <cstdlib>
+#include <functional>
 #include <initializer_list>
 #include <memory>
 #include <string>
@@ -149,6 +151,10 @@ public:
   void focusChanged(InputArea* focused);
   void windowFocusChanged(bool entered);
   bool completeLocationOnTab(std::uint32_t modifiers);
+  bool sidebarKey(const KeyboardEvent& event);
+  bool sidebarOverlays(float x, float y) const;
+  void prepareSidebar(float width);
+  void arrangeSidebar(Renderer& renderer, float top, float height);
   void stampFocusKeys(Node& node);
   void duplicateFrom(BrowserPage& source);
   void open(const luciole::Location& location);
@@ -264,12 +270,15 @@ private:
   MillerView& millerView() override;
   luciole::ViewMode viewMode() const override;
   float gridIconSize() const override;
+  float rowIconSize() const override;
   void captureViewAnchor() override;
   void resetFileView() override;
 
   void operationProgressTick();
 
   void showContaining(const luciole::Location& location);
+  // Opens the folder holding `link`'s target and selects it, once a worker has read the link.
+  void showLinkTarget(const luciole::Location& link);
 
   void applySettings(const luciole::BrowserSettings& settings, bool force) override;
 
@@ -285,8 +294,9 @@ private:
   void applySort(luciole::SortOptions options);
   void changeSort(luciole::SortOptions options);
   void changeGridZoom(int requested);
-  void changeListIconSize(int size);
-  // The current view's step in its icon sizes; only Grid and List views zoom.
+  // List and Columns rows; 0 keeps the view's default size.
+  void changeRowIconSize(int size);
+  // The current view's step in its icon sizes.
   int zoomStep() const;
   void changeZoomStep(int requested);
   void resetZoom();
@@ -329,6 +339,9 @@ private:
   void showPopup(
       std::unique_ptr<Flex> root, ContextMenuControl* menu, LayoutRect anchor, float width, float height,
       bool alignLeft = false
+  ) override;
+  void showContextMenu(
+      std::vector<ContextMenuControlEntry> entries, std::function<void(int)> action, LayoutRect anchor
   ) override;
   PopupSurface* popupSurface() override;
   InputDispatcher& popupDispatcher() override;
@@ -392,7 +405,12 @@ private:
   DialogDropdown m_dialogDropdown{*this, m_connection, m_renderer};
   TrashController m_trashController{*this};
   RenameController m_renameController{*this, m_pins};
-  PropertiesController m_propertiesController{*this, m_icons};
+  FolderIconController m_folderIconController{*this, m_icons};
+  PropertiesController m_propertiesController{
+      *this, m_icons, [this](const luciole::Location& folder, std::function<void()> onCancel) {
+        m_folderIconController.open(folder, std::move(onCancel));
+      }
+  };
   BatchRenameController m_batchRename{*this};
   luciole::TemplateCatalog m_templates;
   SubmenuController m_submenus{*this, m_connection, m_renderer, m_animations};
@@ -400,7 +418,7 @@ private:
   CreateController m_createController{*this, m_templates, m_submenus};
   MountController m_mountController{*this};
   ArchiveController m_archiveController{*this, m_launcher, m_icons, m_connection};
-  TransferController m_transferController{*this, [this] { operationProgressTick(); }};
+  TransferController m_transferController{*this, [this] { operationProgressTick(); }, m_createController};
   OperationsController m_operations{*this, m_hub, [this](luciole::JobId id, bool retry) {
                                       if (m_operationRequest) {
                                         m_operationRequest(id, retry);
@@ -436,6 +454,7 @@ private:
   StatusBarController m_statusBar{*this, m_pins, m_settingsController, m_fileKeys};
   std::size_t m_gridZoom = 1;
   int m_listIconSize = 0;
+  int m_millerIconSize = 0;
   double m_zoomScroll = 0;
   luciole::ViewMode m_viewMode;
   luciole::WaylandTextClipboard& m_clipboard;

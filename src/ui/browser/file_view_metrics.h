@@ -30,8 +30,11 @@ namespace luciole {
         comfortable ? 8.0F : 2.0F
     };
   }
-  // Column view rows follow the density; List rows use fileRowIconSize().
-  inline float millerRowIconSize(BrowsePresentation presentation) {
+  // A millerIconSize of 0 keeps the density's Column view size.
+  inline float millerRowIconSize(BrowsePresentation presentation, int millerIconSize) {
+    if (millerIconSize > 0) {
+      return static_cast<float>(millerIconSize);
+    }
     return presentation.density == ViewDensity::Comfortable ? 28.0F : 20.0F;
   }
   // A listIconSize of 0 keeps the default size.

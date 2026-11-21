@@ -5,8 +5,10 @@
 #include "fs/location.h"
 #include "model/directory_options.h"
 #include "render/scene/node.h"
+#include "ui/controls/context_menu.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -145,6 +147,7 @@ public:
   virtual MillerView& millerView() = 0;
   virtual luciole::ViewMode viewMode() const = 0;
   virtual float gridIconSize() const = 0;
+  virtual float rowIconSize() const = 0;
   // Keeps the first visible item in view across the next layout change.
   virtual void captureViewAnchor() = 0;
   // Cancels file pointer gestures, drops the view anchor and scrolls the file list to the top.
@@ -154,6 +157,10 @@ public:
   virtual void showPopup(
       std::unique_ptr<Flex> root, ContextMenuControl* menu, LayoutRect anchor, float width, float height, bool alignLeft
   ) = 0;
+  // Replaces the active popup with a context menu. Activating an entry closes it and calls `action` with the entry id
+  // on the next main loop iteration; dismissing it without activation drops the callback.
+  virtual void
+  showContextMenu(std::vector<ContextMenuControlEntry> entries, std::function<void(int)> action, LayoutRect anchor) = 0;
   // Shows `root` as a modal dialog centered on the window, with a drop shadow, and focuses its first control.
   // Its height follows its content, capped by the window. While it stays open its top edge stays put, so
   // switching to a shorter or taller page or tab only moves the bottom edge.

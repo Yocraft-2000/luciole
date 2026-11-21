@@ -140,7 +140,7 @@ void ShortcutsController::open() {
   }
   auto root = ui::column(
       {.align = FlexAlign::Stretch},
-      luciole::dialogHeader("Keyboard shortcuts", "keyboard", [this] { m_page.dismissPopup(); }), std::move(body)
+      luciole::dialogHeader("Keyboard Shortcuts", "keyboard", [this] { m_page.dismissPopup(); }), std::move(body)
   );
   luciole::applyDialogStyle(*root);
   m_page.showDialog(std::move(root), DialogWidth::Medium, PopupDismiss::OutsideClick);

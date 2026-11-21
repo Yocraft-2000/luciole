@@ -109,6 +109,9 @@ namespace {
     model.applySnapshot(data, {{3, 1}});
     rows(model, {1, 3});
     TEST_CHECK(model.entry(3) == child && model.treeParent(3) == 1);
+    model.setFilter({.text = "文"});
+    rows(model, {1, 3});
+    model.setFilter({});
     TEST_CHECK(model.select(3));
     const auto expanded = model.snapshot();
     model.applySnapshot(snapshot({entry(1, "replacement")}, 3));
