@@ -124,7 +124,7 @@ void ShortcutsController::open() {
         )
     );
   };
-  heading("Files and folders");
+  heading("Files and Folders");
   for (const auto& [text, keys] : fileShortcuts()) {
     row(text, keys);
   }

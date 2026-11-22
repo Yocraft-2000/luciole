@@ -46,9 +46,9 @@ namespace {
     case luciole::KeybindScope::Controls:
       return "Controls";
     case luciole::KeybindScope::FileBrowser:
-      return "File browser";
+      return "File Browser";
     case luciole::KeybindScope::TabsAndWindows:
-      return "Tabs and windows";
+      return "Tabs and Windows";
     }
     return {};
   }
