@@ -466,37 +466,6 @@ namespace luciole {
     return keybindMatches(activeKeybinds(), command, sym, modifiers);
   }
 
-  std::optional<KeybindChord> keybindMatchedChordAllowingExtraModifiers(
-      const KeybindConfig& config, KeybindCommand command, std::uint32_t sym, std::uint32_t modifiers
-  ) {
-    const KeybindChord received = normalizeKeybindChord({sym, modifiers});
-    for (const auto& chord : config.chords(command)) {
-      if (!chord) {
-        continue;
-      }
-      const KeybindChord expected = normalizeKeybindChord(*chord);
-      if (expected.sym == received.sym && (expected.modifiers & ~received.modifiers) == 0) {
-        return expected;
-      }
-    }
-    return std::nullopt;
-  }
-
-  std::optional<KeybindChord>
-  keybindMatchedChordAllowingExtraModifiers(KeybindCommand command, std::uint32_t sym, std::uint32_t modifiers) {
-    return keybindMatchedChordAllowingExtraModifiers(activeKeybinds(), command, sym, modifiers);
-  }
-
-  bool keybindMatchesAllowingExtraModifiers(
-      const KeybindConfig& config, KeybindCommand command, std::uint32_t sym, std::uint32_t modifiers
-  ) {
-    return keybindMatchedChordAllowingExtraModifiers(config, command, sym, modifiers).has_value();
-  }
-
-  bool keybindMatchesAllowingExtraModifiers(KeybindCommand command, std::uint32_t sym, std::uint32_t modifiers) {
-    return keybindMatchesAllowingExtraModifiers(activeKeybinds(), command, sym, modifiers);
-  }
-
   std::span<const KeybindCommand> keybindMovementCommands() {
     static constexpr std::array<KeybindCommand, kMovementCommandCount> commands{
         KeybindCommand::MoveLeft,  KeybindCommand::MoveRight, KeybindCommand::MoveUp,     KeybindCommand::MoveDown,

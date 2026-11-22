@@ -174,17 +174,6 @@ namespace luciole {
   void setActiveKeybinds(const KeybindConfig& config);
   bool keybindMatches(const KeybindConfig& config, KeybindCommand command, std::uint32_t sym, std::uint32_t modifiers);
   bool keybindMatches(KeybindCommand command, std::uint32_t sym, std::uint32_t modifiers);
-  // Matches with extra modifiers allowed, for list navigation with Shift/Ctrl selection.
-  bool keybindMatchesAllowingExtraModifiers(
-      const KeybindConfig& config, KeybindCommand command, std::uint32_t sym, std::uint32_t modifiers
-  );
-  bool keybindMatchesAllowingExtraModifiers(KeybindCommand command, std::uint32_t sym, std::uint32_t modifiers);
-  // Returns the matched normalized chord, so callers can separate chord modifiers from extra selection modifiers.
-  std::optional<KeybindChord> keybindMatchedChordAllowingExtraModifiers(
-      const KeybindConfig& config, KeybindCommand command, std::uint32_t sym, std::uint32_t modifiers
-  );
-  std::optional<KeybindChord>
-  keybindMatchedChordAllowingExtraModifiers(KeybindCommand command, std::uint32_t sym, std::uint32_t modifiers);
 
   struct KeybindMatch {
     KeybindCommand command;

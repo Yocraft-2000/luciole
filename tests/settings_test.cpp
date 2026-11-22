@@ -1362,9 +1362,6 @@ namespace {
     TEST_CHECK(defaults.chords(K::MovePageDown)[0] == chord(XKB_KEY_Page_Down, 0));
     TEST_CHECK(defaults.chords(K::NextTab)[1] == chord(XKB_KEY_Page_Down, luciole::KeybindMod::Ctrl));
     TEST_CHECK(defaults.chords(K::PreviousTab)[1] == chord(XKB_KEY_Page_Up, luciole::KeybindMod::Ctrl));
-    TEST_CHECK(
-        luciole::keybindMatchesAllowingExtraModifiers(defaults, K::MoveDown, XKB_KEY_Down, luciole::KeybindMod::Shift)
-    );
     TEST_CHECK(!luciole::keybindMatches(defaults, K::MoveDown, XKB_KEY_Down, luciole::KeybindMod::Shift));
     TEST_CHECK(defaults.chords(K::Settings)[0] == chord(XKB_KEY_comma, luciole::KeybindMod::Ctrl));
     TEST_CHECK(defaults.chords(K::ZoomIn)[1] == chord(XKB_KEY_plus, luciole::KeybindMod::Ctrl));
@@ -1419,6 +1416,9 @@ namespace {
     TEST_CHECK(!luciole::keybindConflict(defaults, K::Search, 0, chord(XKB_KEY_Tab, 0)));
     luciole::setActiveKeybinds(defaults);
     TEST_CHECK(luciole::activeKeybinds() == defaults);
+    const auto extended =
+        luciole::keybindBestMatch(luciole::keybindMovementCommands(), XKB_KEY_Down, luciole::KeybindMod::Shift);
+    TEST_CHECK(extended && extended->command == K::MoveDown && extended->extraModifiers == luciole::KeybindMod::Shift);
 
     auto barePrintable = defaults;
     luciole::setKeybindChord(barePrintable, K::MoveDown, 0, chord(XKB_KEY_j, 0));
