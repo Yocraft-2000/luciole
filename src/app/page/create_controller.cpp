@@ -49,11 +49,14 @@ void CreateController::showDocumentMenu(
   auto items = std::make_shared<std::vector<luciole::DocumentTemplate>>(std::move(listing.items));
   const auto& emptyFile = luciole::ActionRegistry::definition(luciole::BrowserAction::CreateFile);
   std::vector<ContextMenuControlEntry> entries{
-      {.id = -1, .label = std::string(emptyFile.label), .shortcut = std::string(emptyFile.shortcut)},
+      {.id = -1,
+       .label = std::string(emptyFile.label),
+       .glyph = std::string(emptyFile.glyph),
+       .shortcut = std::string(emptyFile.shortcut)},
       {.label = "", .separator = true}
   };
   for (std::size_t index = 0; index < items->size(); ++index) {
-    entries.push_back({.id = static_cast<int>(index), .label = (*items)[index].label});
+    entries.push_back({.id = static_cast<int>(index), .label = (*items)[index].label, .glyph = "template"});
   }
   if (loading || items->empty() || listing.error) {
     entries.push_back(

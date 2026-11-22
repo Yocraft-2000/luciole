@@ -576,7 +576,7 @@ void LocationBarController::openBreadcrumbOverflow() {
   for (std::size_t index = 0; index < m_firstBreadcrumb; ++index) {
     const auto& part = m_breadcrumbParts[index];
     targets.push_back(part.location);
-    entries.push_back({.id = static_cast<int>(index), .label = part.button->label()->text()});
+    entries.push_back({.id = static_cast<int>(index), .label = part.button->label()->text(), .glyph = "folder"});
   }
   m_menus.showContextMenu(
       std::move(entries),

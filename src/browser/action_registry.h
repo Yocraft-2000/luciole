@@ -145,6 +145,7 @@ namespace luciole {
     BrowserAction action;
     std::string_view label;
     std::string_view shortcut;
+    std::string_view glyph;
     ActionScope scope = ActionScope::Global;
     bool destructive = false;
     ActionRule rule = nullptr;

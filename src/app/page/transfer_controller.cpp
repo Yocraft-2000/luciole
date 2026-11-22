@@ -321,18 +321,29 @@ void TransferController::chooseDrop(
     resolvedDrop(std::move(pending->payload), pending->destination, action, std::move(pending->finish));
   };
   std::vector<ContextMenuControlEntry> entries;
-  entries.push_back({.id = kDropCopy, .label = "Copy Here", .enabled = pending->options.canCopy, .shortcut = "Ctrl"});
-  entries.push_back({.id = kDropMove, .label = "Move Here", .enabled = pending->options.canMove, .shortcut = "Shift"});
+  entries.push_back(
+      {.id = kDropCopy, .label = "Copy Here", .enabled = pending->options.canCopy, .glyph = "copy", .shortcut = "Ctrl"}
+  );
+  entries.push_back(
+      {.id = kDropMove,
+       .label = "Move Here",
+       .enabled = pending->options.canMove,
+       .glyph = "arrow-right",
+       .shortcut = "Shift"}
+  );
   entries.push_back({.label = "", .separator = true});
   entries.push_back(
       {.id = kDropLink,
        .label = pending->payload.locations.size() == 1 ? "Create Link Here" : "Create Links Here",
-       .enabled = pending->options.canCopy && std::ranges::all_of(pending->payload.locations, [&](const auto& source) {
-                    return luciole::transferLinkTarget(source, destination).has_value();
-                  })}
+       .enabled = pending->options.canCopy
+           && std::ranges::all_of(
+                      pending->payload.locations,
+                      [&](const auto& source) { return luciole::transferLinkTarget(source, destination).has_value(); }
+           ),
+       .glyph = "link"}
   );
   entries.push_back({.label = "", .separator = true});
-  entries.push_back({.id = kDropCancel, .label = "Cancel", .shortcut = "Esc"});
+  entries.push_back({.id = kDropCancel, .label = "Cancel", .glyph = "x", .shortcut = "Esc"});
   m_page.showContextMenu(std::move(entries), choose, {pending->options.x, pending->options.y, 1.0F, 1.0F});
 }
 

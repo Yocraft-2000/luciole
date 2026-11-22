@@ -275,9 +275,13 @@ void SidebarController::openDriveMenu(const std::string& key, float x, float y) 
   if (drive == nullptr) {
     return;
   }
-  std::vector<ContextMenuControlEntry> entries{{.id = 1, .label = drive->root ? "Open" : "Mount and Open"}};
+  std::vector<ContextMenuControlEntry> entries{
+      {.id = 1, .label = drive->root ? "Open" : "Mount and Open", .glyph = "folder-open"}
+  };
   if (drive->removal != luciole::DriveRemoval::None) {
-    entries.push_back({.id = 2, .label = std::string(luciole::driveRemovalLabel(drive->removal))});
+    entries.push_back(
+        {.id = 2, .label = std::string(luciole::driveRemovalLabel(drive->removal)), .glyph = "player-eject"}
+    );
   }
   m_menus.showContextMenu(
       std::move(entries),

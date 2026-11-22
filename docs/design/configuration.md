@@ -32,6 +32,10 @@ Plain single-line Middle text uses the shared renderer's compact layout. Pango s
 
 `browser.drop_action` accepts `menu` (default), `copy` and `move`. Settings → General → When Dropping Files uses the typed preference and Select control. [DragDropController](../../src/app/page/drag_drop_controller.cpp) resolves the same value for internal drags, external drop targets and the drag cursor. Ctrl, Shift and Alt keep priority over the preference, and Trash, items from Trash and non-native folders keep their existing fixed behavior. `menu` sets `DragAction::Ask`, so [TransferController](../../src/app/page/transfer_controller.cpp) shows a drop action context menu anchored at the drop point through [MenuController](../../src/app/page/menu_controller.cpp), offering Copy Here, Move Here and Create Link Here with one shared cancellation path.
 
+## Context menu icons
+
+`browser.context_menu_icons` defaults to `true` and appears under Settings → Appearance. Action glyph names live beside each action in [ActionRegistry](../../src/browser/action_registry.cpp); one-off menus set the same `ContextMenuControlEntry::glyph` field. [MenuController](../../src/app/page/menu_controller.cpp) and [SubmenuController](../../src/app/page/submenu_controller.cpp) pass the preference to `ContextMenuControl::setIconsEnabled()` before publishing entries. Disabling it removes the reserved leading column without changing entry ids, checkmarks, shortcuts or submenu behavior.
+
 ## Atomic writes
 
 [atomic_file.cpp](../../src/fs/atomic_file.cpp) implements anchored local transactions. Cooperating writers use a persistent advisory lock. Preserve that lock across ordinary cleanup; unlinking it can split writer coordination. New private directories use 0700 and data/temporary/lock files use 0600.

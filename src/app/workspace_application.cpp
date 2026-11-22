@@ -1404,15 +1404,15 @@ bool WorkspaceApplication::stripMovePointer(Host& host, const PointerEvent& even
 void WorkspaceApplication::tabMenu(Host& host, luciole::TabId tab, float x, float y) {
   auto& page = *m_pages.at(m_model.windows().at(host.id).active);
   std::vector<ContextMenuControlEntry> entries{
-      {.id = 0, .label = "New Tab", .shortcut = "Ctrl+T"},
-      {.id = 1, .label = "Duplicate Tab", .shortcut = "Ctrl+Shift+D"},
-      {.id = 2, .label = "Close Tab", .shortcut = "Ctrl+W"},
-      {.id = 3, .label = "Reopen Closed Tab", .shortcut = "Ctrl+Shift+T"},
+      {.id = 0, .label = "New Tab", .glyph = "plus", .shortcut = "Ctrl+T"},
+      {.id = 1, .label = "Duplicate Tab", .glyph = "copy", .shortcut = "Ctrl+Shift+D"},
+      {.id = 2, .label = "Close Tab", .glyph = "x", .shortcut = "Ctrl+W"},
+      {.id = 3, .label = "Reopen Closed Tab", .glyph = "history", .shortcut = "Ctrl+Shift+T"},
       {.label = "", .separator = true},
-      {.id = 4, .label = "Split View", .shortcut = "F3"},
-      {.id = 5, .label = "Swap Panes"},
-      {.id = 6, .label = "Move Tab to New Window"},
-      {.id = 7, .label = "Move Tab to Next Window"}
+      {.id = 4, .label = "Split View", .glyph = "columns", .shortcut = "F3"},
+      {.id = 5, .label = "Swap Panes", .glyph = "arrows-cross"},
+      {.id = 6, .label = "Move Tab to New Window", .glyph = "device-desktop"},
+      {.id = 7, .label = "Move Tab to Next Window", .glyph = "arrow-right"}
   };
   const auto window = host.id;
   page.workspaceMenu(

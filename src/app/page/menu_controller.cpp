@@ -92,6 +92,7 @@ MenuController::actionEntry(Action action, const luciole::ActionRequest& request
       .checkmark = !radio && state.checked != -1,
       .radio = radio,
       .toggleState = state.checked,
+      .glyph = std::string(definition.glyph),
       .shortcut = definition.shortcut.empty() ? std::nullopt : std::optional(std::string(definition.shortcut)),
       .destructive = definition.destructive
   };
@@ -105,7 +106,9 @@ std::vector<ContextMenuControlEntry> MenuController::folderMenuEntries(const luc
     addSeparator(entries);
   }
   if (m_page.hasOtherPane()) {
-    entries.push_back({.id = ClosePane, .label = "Close Pane", .shortcut = "Ctrl+Alt+W"});
+    entries.push_back(
+        {.id = ClosePane, .label = "Close Pane", .glyph = "layout-sidebar-right", .shortcut = "Ctrl+Alt+W"}
+    );
   }
   add(Action::Terminal);
   addSeparator(entries);
@@ -127,7 +130,7 @@ std::vector<ContextMenuControlEntry> MenuController::folderMenuEntries(const luc
   }
   add(Action::ReloadPins);
   addSeparator(entries);
-  entries.push_back({.id = CopyLocation, .label = "Copy Location", .hasSubmenu = true});
+  entries.push_back({.id = CopyLocation, .label = "Copy Location", .hasSubmenu = true, .glyph = "file-text"});
   add(Action::Scripts);
   entries.back().hasSubmenu = true;
   return entries;
@@ -164,7 +167,7 @@ std::vector<ContextMenuControlEntry> MenuController::itemMenuEntries(const lucio
     add(Action::QuickPreview);
   }
   if (singleFolder) {
-    entries.push_back({.id = OpenIn, .label = "Open In", .hasSubmenu = true});
+    entries.push_back({.id = OpenIn, .label = "Open In", .hasSubmenu = true, .glyph = "folders"});
     if (!trash) {
       add(Action::TargetTerminal);
     }
@@ -178,14 +181,19 @@ std::vector<ContextMenuControlEntry> MenuController::itemMenuEntries(const lucio
          .label = "Paste into Folder",
          .enabled = !m_page.operationsBusy()
              && luciole::transferLocationSupported(*singleLocation)
-             && luciole::entryAccess(*single).write != false}
+             && luciole::entryAccess(*single).write != false,
+         .glyph = "clipboard"}
     );
   }
   if (m_page.hasOtherPane()) {
-    entries.push_back({.id = CopyToOther, .label = "Copy to Other Pane", .enabled = !m_page.operationsBusy()});
-    entries.push_back({.id = MoveToOther, .label = "Move to Other Pane", .enabled = !m_page.operationsBusy()});
+    entries.push_back(
+        {.id = CopyToOther, .label = "Copy to Other Pane", .enabled = !m_page.operationsBusy(), .glyph = "copy"}
+    );
+    entries.push_back(
+        {.id = MoveToOther, .label = "Move to Other Pane", .enabled = !m_page.operationsBusy(), .glyph = "arrow-right"}
+    );
   }
-  entries.push_back({.id = CopyLocation, .label = "Copy Location", .hasSubmenu = true});
+  entries.push_back({.id = CopyLocation, .label = "Copy Location", .hasSubmenu = true, .glyph = "file-text"});
   addSeparator(entries);
   if (single != nullptr) {
     if (luciole::isSupportedArchive(*singleLocation, single->contentType.value_or(""))) {
@@ -311,10 +319,10 @@ void MenuController::openFileMenu(std::optional<luciole::EntryId> id, float x, f
 
 void MenuController::showOpenInMenu(const luciole::ActionRequest& request) {
   std::vector<ContextMenuControlEntry> entries{
-      {.id = NewTab, .label = "New Tab"},
+      {.id = NewTab, .label = "New Tab", .glyph = "plus"},
       // Without a second pane, the workspace splits the window to open one.
-      {.id = OtherPane, .label = m_page.hasOtherPane() ? "Other Pane" : "New Pane"},
-      {.id = NewWindow, .label = "New Window"}
+      {.id = OtherPane, .label = m_page.hasOtherPane() ? "Other Pane" : "New Pane", .glyph = "layout-sidebar-right"},
+      {.id = NewWindow, .label = "New Window", .glyph = "device-desktop"}
   };
   m_submenus.show(
       std::move(entries),
@@ -361,7 +369,7 @@ void MenuController::openPlaceMenu(const luciole::Bookmark& bookmark, float x, f
   if (m_page.choosing()) {
     return;
   }
-  std::vector<ContextMenuControlEntry> entries{{.id = 1, .label = "Open"}};
+  std::vector<ContextMenuControlEntry> entries{{.id = 1, .label = "Open", .glyph = "folder-open"}};
   if (!m_pins.contains(bookmark.location)) {
     showContextMenu(
         std::move(entries), [this, location = bookmark.location](int) { m_page.browser().open(location); }, {x, y, 1, 1}
@@ -386,22 +394,29 @@ void MenuController::openPlaceMenu(const luciole::Bookmark& bookmark, float x, f
   {
     entries.push_back({.label = "", .separator = true});
     if (!bookmark.location.isTrash() && bookmark.location != luciole::Location::network()) {
-      entries.push_back({.id = 2, .label = "Unpin", .enabled = m_pins.editable()});
-      entries.push_back({.id = 6, .label = "Rename Place…", .enabled = m_pins.editable()});
-      entries.push_back({.id = 8, .label = "Change Icon…", .enabled = m_pins.editable()});
+      entries.push_back({.id = 2, .label = "Unpin", .enabled = m_pins.editable(), .glyph = "pinned-off"});
+      entries.push_back({.id = 6, .label = "Rename Place…", .enabled = m_pins.editable(), .glyph = "pencil"});
+      entries.push_back({.id = 8, .label = "Change Icon…", .enabled = m_pins.editable(), .glyph = "paint"});
     }
-    entries.push_back({.id = 3, .label = "Move Up", .enabled = m_pins.editable() && adjacent(true).has_value()});
-    entries.push_back({.id = 4, .label = "Move Down", .enabled = m_pins.editable() && adjacent(false).has_value()});
+    entries.push_back(
+        {.id = 3, .label = "Move Up", .enabled = m_pins.editable() && adjacent(true).has_value(), .glyph = "arrow-up"}
+    );
+    entries.push_back(
+        {.id = 4,
+         .label = "Move Down",
+         .enabled = m_pins.editable() && adjacent(false).has_value(),
+         .glyph = "arrow-bar-down"}
+    );
   }
   entries.push_back({.label = "", .separator = true});
   if (bookmark.location == luciole::Location::trash()) {
-    entries.push_back({.id = 7, .label = "Empty Trash…", .enabled = false, .destructive = true});
+    entries.push_back({.id = 7, .label = "Empty Trash…", .enabled = false, .glyph = "trash-x", .destructive = true});
     entries.push_back({.label = "", .separator = true});
   }
   if (bookmark.location == luciole::Location::network()) {
-    entries.push_back({.id = 9, .label = "Hide Network"});
+    entries.push_back({.id = 9, .label = "Hide Network", .glyph = "eye-off"});
   } else {
-    entries.push_back({.id = 5, .label = "Properties"});
+    entries.push_back({.id = 5, .label = "Properties", .glyph = "info-circle"});
   }
   showContextMenu(
       entries,
@@ -468,7 +483,7 @@ void MenuController::openBreadcrumbMenu(const luciole::Location& target, LayoutR
   for (const auto& crumb : luciole::locationBreadcrumbs(target)) {
     const auto index = targets->size();
     targets->push_back(crumb.location);
-    entries.push_back({.id = static_cast<int>(index), .label = crumb.label});
+    entries.push_back({.id = static_cast<int>(index), .label = crumb.label, .glyph = "folder"});
   }
   entries.push_back({.label = "", .separator = true});
   const auto request = m_page.actionRequest(false);
@@ -527,7 +542,7 @@ void MenuController::openBreadcrumbMenu(const luciole::Location& target, LayoutR
         }
         entries.pop_back();
         for (const auto& item : suggestions.items) {
-          entries.push_back({.id = static_cast<int>(targets->size()), .label = item.label});
+          entries.push_back({.id = static_cast<int>(targets->size()), .label = item.label, .glyph = "folder"});
           targets->push_back(item.location);
         }
         if (suggestions.items.empty()) {
@@ -612,6 +627,7 @@ void MenuController::showContextMenu(
   const float contentHeight = ContextMenuControl::preferredHeight(entries, entries.size(), 1.0F, compact);
   const float height = std::min(contentHeight, m_page.popupMaxHeight());
   control->setCompact(compact);
+  control->setIconsEnabled(m_page.settings().contextMenuIcons);
   control->setMaxVisible(entries.size());
   const float width = std::min(preferredWidth, static_cast<float>(m_page.surface().width()) - 32.0F);
   control->setEntries(std::move(entries));
@@ -654,51 +670,65 @@ void MenuController::showContextMenu(
 
 void MenuController::openColumnsMenu(const LayoutRect& anchor, std::optional<luciole::DetailsColumn> column) {
   std::vector<ContextMenuControlEntry> entries{
-      {.label = "Name", .enabled = false, .checkmark = true, .toggleState = 1}
+      {.label = "Name", .enabled = false, .checkmark = true, .toggleState = 1, .glyph = "text-caption"}
   };
   for (const auto candidate : m_columns.columnOrder()) {
     entries.push_back(
         {.id = static_cast<int>(candidate) + 1,
          .label = std::string(luciole::detailsColumnLabel(candidate)),
          .checkmark = true,
-         .toggleState = luciole::detailsColumnVisible(m_columns.columnVisibility(), candidate) ? 1 : 0}
+         .toggleState = luciole::detailsColumnVisible(m_columns.columnVisibility(), candidate) ? 1 : 0,
+         .glyph = "columns"}
     );
   }
   entries.push_back({.label = "", .separator = true});
   entries.push_back(
-      {.id = 100, .label = "Show All Columns", .enabled = m_columns.columnVisibility() != luciole::allDetailsColumns()}
+      {.id = 100,
+       .label = "Show All Columns",
+       .enabled = m_columns.columnVisibility() != luciole::allDetailsColumns(),
+       .glyph = "select-all"}
   );
   entries.push_back(
       {.id = 106,
        .label = "Reset Column Visibility",
-       .enabled = m_columns.columnVisibility() != luciole::DetailsColumnVisibility{}}
+       .enabled = m_columns.columnVisibility() != luciole::DetailsColumnVisibility{},
+       .glyph = "eye"}
   );
   const int left = Style::rtl() ? 1 : -1;
   if (column) {
     entries.push_back({.label = "", .separator = true});
     entries.push_back(
-        {.id = 101, .label = "Move Left", .enabled = m_columns.movedColumnOrder(*column, left).has_value()}
+        {.id = 101,
+         .label = "Move Left",
+         .enabled = m_columns.movedColumnOrder(*column, left).has_value(),
+         .glyph = "arrow-left"}
     );
     entries.push_back(
-        {.id = 102, .label = "Move Right", .enabled = m_columns.movedColumnOrder(*column, -left).has_value()}
+        {.id = 102,
+         .label = "Move Right",
+         .enabled = m_columns.movedColumnOrder(*column, -left).has_value(),
+         .glyph = "arrow-right"}
     );
   }
   entries.push_back({.label = "", .separator = true});
   entries.push_back(
       {.id = 103,
        .label = "Reset Column Order",
-       .enabled = m_columns.columnOrder() != luciole::kDefaultDetailsColumnOrder}
+       .enabled = m_columns.columnOrder() != luciole::kDefaultDetailsColumnOrder,
+       .glyph = "refresh"}
   );
   const std::size_t widthIndex = column ? static_cast<std::size_t>(*column) + 1 : 0;
   entries.push_back(
       {.id = 104,
        .label = "Reset Column Width",
-       .enabled = m_columns.columnWidths()[widthIndex] != luciole::kDefaultDetailsColumnWidths[widthIndex]}
+       .enabled = m_columns.columnWidths()[widthIndex] != luciole::kDefaultDetailsColumnWidths[widthIndex],
+       .glyph = "text-size"}
   );
   entries.push_back(
       {.id = 105,
        .label = "Reset All Column Widths",
-       .enabled = m_columns.columnWidths() != luciole::kDefaultDetailsColumnWidths}
+       .enabled = m_columns.columnWidths() != luciole::kDefaultDetailsColumnWidths,
+       .glyph = "clear-all"}
   );
   showContextMenu(
       std::move(entries),
@@ -792,9 +822,9 @@ void MenuController::openMenu() {
     return;
   }
   std::vector<ContextMenuControlEntry> entries{
-      {.id = 9000, .label = "New Tab", .shortcut = "Ctrl+T"},
-      {.id = 9001, .label = "New Window", .shortcut = "Ctrl+N"},
-      {.id = 9002, .label = "Split View", .shortcut = "F3"},
+      {.id = 9000, .label = "New Tab", .glyph = "plus", .shortcut = "Ctrl+T"},
+      {.id = 9001, .label = "New Window", .glyph = "device-desktop", .shortcut = "Ctrl+N"},
+      {.id = 9002, .label = "Split View", .glyph = "columns", .shortcut = "F3"},
       {.label = "", .separator = true}
   };
   const auto request = m_page.actionRequest(true);
