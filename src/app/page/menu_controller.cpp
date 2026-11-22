@@ -405,7 +405,7 @@ void MenuController::openPlaceMenu(const luciole::Bookmark& bookmark, float x, f
         {.id = 4,
          .label = "Move Down",
          .enabled = m_pins.editable() && adjacent(false).has_value(),
-         .glyph = "arrow-bar-down"}
+         .glyph = "arrow-down"}
     );
   }
   entries.push_back({.label = "", .separator = true});

@@ -328,7 +328,7 @@ void TransferController::chooseDrop(
       {.id = kDropMove,
        .label = "Move Here",
        .enabled = pending->options.canMove,
-       .glyph = "arrow-right",
+       .glyph = "file-import",
        .shortcut = "Shift"}
   );
   entries.push_back({.label = "", .separator = true});
