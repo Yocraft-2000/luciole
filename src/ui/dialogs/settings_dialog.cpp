@@ -452,12 +452,9 @@ void SettingsDialog::addKeybinds() {
   page->addChild(
       ui::row(
           {.justify = FlexJustify::Center},
-          ui::segmented(
-              {.options = std::move(scopes),
-               .selectedIndex = 0,
-               .equalSegmentWidths = true,
-               .onChange = [this](std::size_t index) { selectKeybindScope(index); }}
-          )
+          ui::segmented({.options = std::move(scopes), .selectedIndex = 0, .onChange = [this](std::size_t index) {
+                           selectKeybindScope(index);
+                         }})
       )
   );
 
