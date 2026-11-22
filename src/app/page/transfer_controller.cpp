@@ -304,14 +304,12 @@ void TransferController::moveIntoNewFolder(
       || !destination.isNative()
       || !m_page.visible()
       || m_page.operationsBusy()
-      || !m_page.popupAvailable()
-      || !destination.isNative()) {
+      || !m_page.popupAvailable()) {
     finish(false);
     return;
   }
   const auto pending = std::make_shared<PendingNewFolder>(
-      std::move(payload), destination, std::move(options), std::move(finish), m_page.browser().contextSerial(),
-      m_lifetime
+      std::move(payload), std::move(options), std::move(finish), m_page.browser().contextSerial()
   );
   auto editor = std::make_unique<NameDialog>(
       m_page.dialogWidth(DialogWidth::Small), "New folder", "folder-plus", "New Folder", "", luciole::filenameProblem,
@@ -327,13 +325,7 @@ void TransferController::moveIntoNewFolder(
   }
   m_page.activePopup().bind(ActivePopup::Kind::CreateItem, [this] { closeNewFolder(); });
   m_newFolder->createJob = m_page.jobs().create<luciole::CreateService>(JobScope::Page);
-  const std::weak_ptr<int> lifetime = m_newFolder->lifetime;
-  const std::weak_ptr<PendingNewFolder> weak = m_newFolder;
-  m_newFolder->createJob->whenIdle([this, lifetime, weak](OperationJob&) {
-    if (!lifetime.expired() && !weak.expired()) {
-      m_newFolderDirty = true;
-    }
-  });
+  watchNewFolder();
   auto& creator = m_newFolder->createJob->service<luciole::CreateService>();
   m_newFolder->preparing = true;
   m_newFolderEditor->setSaving(true);
@@ -341,7 +333,6 @@ void TransferController::moveIntoNewFolder(
     m_newFolder->preparing = false;
     m_newFolderEditor->setSaving(false);
     m_newFolderEditor->showError("Another creation is still finishing.");
-    return;
   }
 }
 
@@ -355,13 +346,7 @@ void TransferController::submitNewFolder(std::string name) {
     m_newFolderEditor->showError("The destination is unavailable. Close this dialog and try again.");
     return;
   }
-  const std::weak_ptr<int> lifetime = pending->lifetime;
-  const std::weak_ptr<PendingNewFolder> weak = pending;
-  pending->createJob->whenIdle([this, lifetime, weak](OperationJob&) {
-    if (!lifetime.expired() && !weak.expired()) {
-      m_newFolderDirty = true;
-    }
-  });
+  watchNewFolder();
   if (!creator.create(std::move(name))) {
     const auto& error = creator.snapshot().error;
     m_newFolderEditor->showError(
@@ -372,6 +357,16 @@ void TransferController::submitNewFolder(std::string name) {
   }
   m_page.jobs().follow(*pending->createJob);
   m_newFolderEditor->setSaving(true);
+}
+
+void TransferController::watchNewFolder() {
+  const std::weak_ptr<int> lifetime = m_lifetime;
+  const std::weak_ptr<PendingNewFolder> weak = m_newFolder;
+  m_newFolder->createJob->whenIdle([this, lifetime, weak](OperationJob&) {
+    if (!lifetime.expired() && !weak.expired()) {
+      m_newFolderDirty = true;
+    }
+  });
 }
 
 void TransferController::closeNewFolder() {
@@ -439,8 +434,7 @@ void TransferController::syncNewFolder() {
     }
     return;
   }
-  if (pending->lifetime.expired()
-      || pending->context != m_page.browser().contextSerial()
+  if (pending->context != m_page.browser().contextSerial()
       || !m_page.visible()
       || m_page.operationsBusy()
       || !snapshot.destination

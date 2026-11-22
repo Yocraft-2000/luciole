@@ -21,8 +21,8 @@ namespace luciole {
 } // namespace luciole
 
 class Button;
-class NameDialog;
 class CreateController;
+class NameDialog;
 class OperationJob;
 class PageContext;
 
@@ -79,19 +79,11 @@ private:
     std::uint64_t conflict = 0;
   };
   struct PendingNewFolder {
-    PendingNewFolder(
-        luciole::FilePayload files, luciole::Location where, luciole::DropOptions drop, luciole::DropCompletion done,
-        std::uint32_t serial, std::weak_ptr<int> life
-    )
-        : payload(std::move(files)), destination(std::move(where)), options(std::move(drop)), finish(std::move(done)),
-          context(serial), lifetime(std::move(life)) {}
     luciole::FilePayload payload;
-    luciole::Location destination;
     luciole::DropOptions options;
     luciole::DropCompletion finish;
-    std::shared_ptr<OperationJob> createJob = nullptr;
     std::uint32_t context = 0;
-    std::weak_ptr<int> lifetime;
+    std::shared_ptr<OperationJob> createJob = nullptr;
     bool chosen = false;
     bool preparing = false;
     ~PendingNewFolder() {
@@ -100,8 +92,7 @@ private:
       }
     }
     void cancel() {
-      if (!chosen) {
-        chosen = true;
+      if (!std::exchange(chosen, true)) {
         finish(false);
       }
     }
@@ -132,6 +123,8 @@ private:
       luciole::DropCompletion finish
   );
   void submitNewFolder(std::string name);
+  // Marks the folder dialog for syncNewFolder() once the current creation run ends.
+  void watchNewFolder();
   void closeNewFolder();
   void syncNewFolder();
   void trashDrop(luciole::FilePayload payload, const luciole::DropOptions& options, luciole::DropCompletion finish);
