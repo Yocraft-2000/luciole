@@ -2,8 +2,9 @@
 #include "app/page/page_context.h"
 #include "app/page/sidebar_controller.h"
 #include "browser/browser_controller.h"
+#include "config/keybinds.h"
 #include "config/view_preference_writer.h"
-#include "core/input/key_symbols.h"
+#include "core/input/key_modifiers.h"
 #include "platform/desktop_integration.h"
 #include "render/animation/animation_manager.h"
 #include "ui/browser/places_sidebar.h"
@@ -155,12 +156,15 @@ bool SidebarController::key(const KeyboardEvent& event) {
     return false;
   }
   if (event.pressed && !event.preedit) {
-    if (event.modifiers == 0 && (KeySymbol::isEscape(event.sym) || event.sym == XKB_KEY_F9)) {
+    using K = luciole::KeybindCommand;
+    if (luciole::keybindMatches(K::Cancel, event.sym, event.modifiers)
+        || luciole::keybindMatches(K::ToggleSidebar, event.sym, event.modifiers)) {
       dismissDrawer();
       return true;
     }
-    if (KeySymbol::isTab(event.sym) && (event.modifiers == 0 || event.modifiers == KeyMod::Shift)) {
-      (void)m_page.dispatcher().cycleTabFocusInSubtree(m_places, event.modifiers == KeyMod::Shift);
+    const bool focusPrevious = luciole::keybindMatches(K::FocusPrevious, event.sym, event.modifiers);
+    if (focusPrevious || luciole::keybindMatches(K::FocusNext, event.sym, event.modifiers)) {
+      (void)m_page.dispatcher().cycleTabFocusInSubtree(m_places, focusPrevious);
       m_page.surface().requestRedraw();
       return true;
     }

@@ -4,7 +4,7 @@
 #include "app/page/dialog_dropdown.h"
 #include "app/page/page_context.h"
 #include "browser/browser_controller.h"
-#include "core/input/key_symbols.h"
+#include "config/keybinds.h"
 #include "fs/background_job.h"
 #include "fs/folder_icon.h"
 #include "render/scene/input_dispatcher.h"
@@ -154,7 +154,9 @@ void FolderIconController::cancelPicker() {
 }
 
 bool FolderIconController::escapeKey(const KeyboardEvent& event) {
-  if (m_picker == nullptr || !event.pressed || event.modifiers != 0 || !KeySymbol::isEscape(event.sym)) {
+  if (m_picker == nullptr
+      || !event.pressed
+      || !luciole::keybindMatches(luciole::KeybindCommand::Cancel, event.sym, event.modifiers)) {
     return false;
   }
   cancelPicker();
