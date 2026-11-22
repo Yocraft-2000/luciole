@@ -13,10 +13,11 @@ luciole::MillerColumns::makeColumn(BrowserController& source, const Location& lo
   auto column = std::make_unique<Column>(Column{
       ++m_nextId,
       std::make_unique<BrowserController>(
-          source.model().sort(), source.model().filter().showHidden, source.model().filter().showBackups
+          source.defaultSort(), source.model().filter().showHidden, source.model().filter().showBackups
       ),
       location, std::nullopt, defaultWidth
   });
+  column->browser->setFolderViews(source.folderViews());
   column->browser->setSearchRecursive(source.searchRecursive());
   if (inheritHistory) {
     column->browser->duplicateFrom(source);

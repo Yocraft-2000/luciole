@@ -1,6 +1,7 @@
 """Exercise the public CLI without a graphical session."""
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -31,13 +32,15 @@ class CliTest(unittest.TestCase):
     def test_headless_information(self):
         version = self.invoke("--version")
         self.assertEqual(version.returncode, 0, version.stderr)
-        self.assertTrue(version.stdout.startswith(f"luciole {VERSION} ("))
+        self.assertRegex(version.stdout, rf"^luciole {re.escape(VERSION)}( \(\S+\))?\n$")
         self.assertEqual(version.stderr, "")
         help_result = self.invoke("--help")
         self.assertEqual(help_result.returncode, 0, help_result.stderr)
         self.assertIn("Usage: luciole", help_result.stdout)
         self.assertIn("Open Luciole in Home", help_result.stdout)
         self.assertEqual(help_result.stderr, "")
+        self.assertEqual(self.invoke("-v").stdout, version.stdout)
+        self.assertEqual(self.invoke("-h").stdout, help_result.stdout)
 
     def test_reject_invalid_argument_combinations(self):
         for args in (

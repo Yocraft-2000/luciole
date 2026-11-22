@@ -7,14 +7,20 @@
 #include "browser/browser_controller.h"
 #include "browser/location_presentation.h"
 #include "core/ui_phase.h"
+#include "fs/archive_type.h"
+#include "fs/filename.h"
 #include "fs/gio_ptr.h"
+#include "operations/archive_service.h"
+#include "operations/create_service.h"
 #include "operations/trash_item.h"
 #include "platform/desktop_integration.h"
 #include "render/scene/input_dispatcher.h"
 #include "ui/browser/file_error_text.h"
 #include "ui/builders.h"
 #include "ui/controls/context_menu.h"
+#include "ui/controls/input.h"
 #include "ui/dialogs/dialog_chrome.h"
+#include "ui/dialogs/name_dialog.h"
 #include "ui/palette.h"
 #include "ui/style.h"
 #include "wayland/popup_surface.h"
@@ -30,6 +36,8 @@ namespace {
   constexpr int kDropCopy = 1;
   constexpr int kDropMove = 2;
   constexpr int kDropLink = 3;
+  constexpr int kDropExtract = 4;
+  constexpr int kDropNewFolder = 5;
   constexpr int kDropCancel = -1;
 
   bool arrived(const luciole::TransferResult& result) {
@@ -258,6 +266,203 @@ void TransferController::resolvedDrop(
   });
 }
 
+void TransferController::extractedDrop(
+    const luciole::FilePayload& payload, const luciole::Location& destination, const luciole::DropOptions& options,
+    luciole::DropCompletion finish
+) {
+  if (payload.locations.size() != 1
+      || !destination.isNative()
+      || !options.canCopy
+      || !options.select
+      || !luciole::isSupportedArchive(payload.locations.front(), "")) {
+    finish(false);
+    return;
+  }
+  if (!options.select(luciole::TransferAction::Copy)) {
+    finish(false);
+    return;
+  }
+  const auto& source = payload.locations.front();
+  const auto target = destination.child(luciole::archiveFolderName(source));
+  const auto job = m_page.jobs().create<luciole::ArchiveService>();
+  if (!job->service<luciole::ArchiveService>().extract(source, target, {}, nullptr)) {
+    finish(false);
+    return;
+  }
+  job->whenIdle([finish = std::move(finish)](OperationJob& done) {
+    const auto& archives = done.service<luciole::ArchiveService>();
+    finish(!archives.error().has_value() && !archives.results().empty());
+  });
+}
+
+void TransferController::moveIntoNewFolder(
+    luciole::FilePayload payload, const luciole::Location& destination, luciole::DropOptions options,
+    luciole::DropCompletion finish
+) {
+  if (payload.locations.empty()
+      || !options.canMove
+      || !destination.isNative()
+      || !m_page.visible()
+      || m_page.operationsBusy()
+      || !m_page.popupAvailable()) {
+    finish(false);
+    return;
+  }
+  const auto pending = std::make_shared<PendingNewFolder>(
+      std::move(payload), std::move(options), std::move(finish), m_page.browser().contextSerial()
+  );
+  auto editor = std::make_unique<NameDialog>(
+      m_page.dialogWidth(DialogWidth::Small), "New Folder", "folder-plus", "New Folder", "", luciole::filenameProblem,
+      [this](std::string name) { submitNewFolder(std::move(name)); }, [this] { m_page.dismissPopup(); }, "Create",
+      "Creating…"
+  );
+  m_newFolder = pending;
+  m_newFolderEditor = editor.get();
+  m_page.showDialog(std::move(editor), DialogWidth::Small);
+  if (!m_page.popupSurface()) {
+    closeNewFolder();
+    return;
+  }
+  m_page.activePopup().bind(ActivePopup::Kind::CreateItem, [this] { closeNewFolder(); });
+  m_newFolder->createJob = m_page.jobs().create<luciole::CreateService>(JobScope::Page);
+  watchNewFolder();
+  auto& creator = m_newFolder->createJob->service<luciole::CreateService>();
+  m_newFolder->preparing = true;
+  m_newFolderEditor->setSaving(true);
+  if (!creator.prepare(destination, luciole::CreateKind::Folder)) {
+    m_newFolder->preparing = false;
+    m_newFolderEditor->setSaving(false);
+    m_newFolderEditor->showError("Another creation is still finishing.");
+  }
+}
+
+void TransferController::submitNewFolder(std::string name) {
+  const auto pending = m_newFolder;
+  if (!pending || !pending->createJob || !m_newFolderEditor || pending->chosen || pending->preparing) {
+    return;
+  }
+  auto& creator = pending->createJob->service<luciole::CreateService>();
+  if (!creator.canCreate()) {
+    m_newFolderEditor->showError("The destination is unavailable. Close this dialog and try again.");
+    return;
+  }
+  watchNewFolder();
+  if (!creator.create(std::move(name))) {
+    const auto& error = creator.snapshot().error;
+    m_newFolderEditor->showError(
+        error ? luciole::nameErrorText(*error, "The destination folder is no longer available.")
+              : "The destination is unavailable. Close this dialog and try again."
+    );
+    return;
+  }
+  m_page.jobs().follow(*pending->createJob);
+  m_newFolderEditor->setSaving(true);
+}
+
+void TransferController::watchNewFolder() {
+  const std::weak_ptr<int> lifetime = m_lifetime;
+  const std::weak_ptr<PendingNewFolder> weak = m_newFolder;
+  m_newFolder->createJob->whenIdle([this, lifetime, weak](OperationJob&) {
+    if (!lifetime.expired() && !weak.expired()) {
+      m_newFolderDirty = true;
+    }
+  });
+}
+
+void TransferController::closeNewFolder() {
+  if (m_newFolder) {
+    m_newFolder->cancel();
+    if (m_newFolder->createJob && (m_page.jobs().attached() || !m_newFolder->createJob->running())) {
+      m_newFolder->createJob->cancel();
+    }
+  }
+  m_newFolder.reset();
+  m_newFolderEditor = nullptr;
+  m_newFolderDirty = false;
+}
+
+void TransferController::onFrame() {
+  if (std::exchange(m_newFolderDirty, false)) {
+    syncNewFolder();
+  }
+}
+
+void TransferController::syncNewFolder() {
+  const auto pending = m_newFolder;
+  if (!pending || !pending->createJob || pending->createJob->running()) {
+    return;
+  }
+  const auto& creator = pending->createJob->service<luciole::CreateService>();
+  const auto& snapshot = creator.snapshot();
+  if (pending->preparing) {
+    if (snapshot.status == luciole::CreateStatus::Cancelled) {
+      pending->cancel();
+      closeNewFolder();
+      m_page.dismissPopup();
+      return;
+    }
+    if (snapshot.status == luciole::CreateStatus::Ready || snapshot.status == luciole::CreateStatus::Error) {
+      pending->preparing = false;
+      if (m_newFolderEditor) {
+        m_newFolderEditor->setSaving(false);
+        m_newFolderEditor->showError(
+            snapshot.error ? luciole::nameErrorText(*snapshot.error, "Could not prepare the destination.")
+                           : std::string{}
+        );
+        if (m_page.popupSurface()) {
+          m_page.popupDispatcher().setFocus(m_newFolderEditor->input()->inputArea());
+          m_newFolderEditor->input()->selectAll();
+          m_page.popupSurface()->requestLayout();
+        }
+      }
+    }
+    return;
+  }
+  const bool created =
+      snapshot.status == luciole::CreateStatus::Succeeded || snapshot.status == luciole::CreateStatus::Partial;
+  if (!created) {
+    if (m_newFolderEditor) {
+      const auto& error = snapshot.error;
+      m_newFolderEditor->setSaving(false);
+      m_newFolderEditor->showError(
+          error ? luciole::nameErrorText(*error, "Could not create the folder.")
+                : "The destination folder is no longer available."
+      );
+      if (m_page.popupSurface()) {
+        m_page.popupSurface()->requestLayout();
+      }
+    }
+    return;
+  }
+  if (pending->context != m_page.browser().contextSerial()
+      || !m_page.visible()
+      || m_page.operationsBusy()
+      || !snapshot.destination
+      || !pending->options.select
+      || !pending->options.select(luciole::TransferAction::Move)) {
+    pending->cancel();
+    closeNewFolder();
+    m_page.dismissPopup();
+    return;
+  }
+  auto payload = std::move(pending->payload);
+  auto finish = std::move(pending->finish);
+  pending->chosen = true;
+  m_newFolder.reset();
+  m_newFolderEditor = nullptr;
+  m_page.dismissPopup();
+  const auto job = startPayloadTransfer(std::move(payload), *snapshot.destination, luciole::TransferAction::Move);
+  if (!job) {
+    finish(false);
+    return;
+  }
+  job->whenIdle([finish = std::move(finish)](OperationJob& done) {
+    finish(withTransferResults(done, [](const auto& results) {
+      return !results.empty() && std::ranges::all_of(results, arrived);
+    }));
+  });
+}
+
 void TransferController::chooseDrop(
     luciole::FilePayload payload, const luciole::Location& destination, luciole::DropOptions options,
     luciole::DropCompletion finish
@@ -306,6 +511,26 @@ void TransferController::chooseDrop(
       pending->cancel();
       return;
     }
+    if (id == kDropExtract) {
+      if (!m_page.visible() || m_page.operationsBusy() || context != m_page.browser().contextSerial()) {
+        pending->cancel();
+        return;
+      }
+      pending->chosen = true;
+      extractedDrop(pending->payload, pending->destination, pending->options, std::move(pending->finish));
+      return;
+    }
+    if (id == kDropNewFolder) {
+      if (!m_page.visible() || m_page.operationsBusy() || context != m_page.browser().contextSerial()) {
+        pending->cancel();
+        return;
+      }
+      pending->chosen = true;
+      moveIntoNewFolder(
+          std::move(pending->payload), pending->destination, std::move(pending->options), std::move(pending->finish)
+      );
+      return;
+    }
     const auto action = id == kDropCopy ? luciole::TransferAction::Copy
         : id == kDropMove               ? luciole::TransferAction::Move
                                         : luciole::TransferAction::Link;
@@ -320,6 +545,11 @@ void TransferController::chooseDrop(
     pending->chosen = true;
     resolvedDrop(std::move(pending->payload), pending->destination, action, std::move(pending->finish));
   };
+  const bool canExtract = pending->payload.locations.size() == 1
+      && destination.isNative()
+      && pending->options.canCopy
+      && luciole::isSupportedArchive(pending->payload.locations.front(), "");
+  const bool canNewFolder = pending->options.canMove && destination.isNative();
   std::vector<ContextMenuControlEntry> entries;
   entries.push_back({.id = kDropCopy, .label = "Copy Here", .enabled = pending->options.canCopy, .shortcut = "Ctrl"});
   entries.push_back({.id = kDropMove, .label = "Move Here", .enabled = pending->options.canMove, .shortcut = "Shift"});
@@ -331,6 +561,8 @@ void TransferController::chooseDrop(
                     return luciole::transferLinkTarget(source, destination).has_value();
                   })}
   );
+  entries.push_back({.id = kDropExtract, .label = "Extract Here", .enabled = canExtract});
+  entries.push_back({.id = kDropNewFolder, .label = "Move into New Folder…", .enabled = canNewFolder});
   entries.push_back({.label = "", .separator = true});
   entries.push_back({.id = kDropCancel, .label = "Cancel", .shortcut = "Esc"});
   m_page.showContextMenu(std::move(entries), choose, {pending->options.x, pending->options.y, 1.0F, 1.0F});
@@ -633,4 +865,5 @@ void TransferController::updateOperationProgress() {
 void TransferController::stopProgress() {
   m_operationProgress.stop();
   m_extraction.cancel();
+  closeNewFolder();
 }

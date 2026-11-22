@@ -3,6 +3,7 @@
 #include "core/input/key_modifiers.h"
 #include "core/input/key_symbols.h"
 #include "cursor-shape-v1-client-protocol.h"
+#include "fs/location.h"
 #include "ui/browser/file_view_metrics.h"
 #include "ui/builders.h"
 
@@ -425,10 +426,12 @@ void MillerView::doLayout(Renderer& renderer) {
     const auto& snapshot = model.snapshot();
     loadPending = loadPending || snapshot.status == luciole::DirectoryStatus::Idle;
     const bool empty = model.rows().empty();
+    const bool deviceRoot = snapshot.location && snapshot.location->isDeviceRoot();
     view.notice->setText(
         snapshot.status == luciole::DirectoryStatus::Loading || snapshot.status == luciole::DirectoryStatus::Idle
             ? "Loading…"
             : snapshot.error ? snapshot.error->message
+            : deviceRoot     ? "Device locked or transfer disabled"
                              : "This folder is empty"
     );
     view.notice->setVisible(empty);

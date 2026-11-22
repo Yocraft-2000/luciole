@@ -167,6 +167,10 @@ SettingsDialog::SettingsDialog(
   addBool(P::ShowPermanentDeletion, "Show Delete Permanently in Context Menus");
   addBool(P::SwitchToNewTab, "Switch to New Folder Tabs");
   addBool(P::RestoreLastWindow, "Restore Tabs from Last Closed Window");
+  addBool(
+      P::SingleWindow, "Single Window",
+      "Launches and Show Items requests open tabs in the existing window; New Window becomes a new tab"
+  );
   card("Terminal");
   addTerminal();
   section("Appearance", "paint");
@@ -191,7 +195,6 @@ SettingsDialog::SettingsDialog(
   addNumber(P::SidebarWidth, "Sidebar Width", widths(luciole::kMinSidebarWidth, luciole::kMaxSidebarWidth));
   card("Preview");
   addBool(P::ShowPreview, "Show Preview");
-  addBool(P::ChooserShowPreview, "Show Preview in File Picker");
   addNumber(P::PreviewWidth, "Preview Width", widths(208, 800));
   section("Views", "layout-grid");
   card("View");
@@ -199,6 +202,7 @@ SettingsDialog::SettingsDialog(
       P::ViewMode, "View",
       {{"Grid", luciole::ViewMode::Grid}, {"List", luciole::ViewMode::List}, {"Columns", luciole::ViewMode::Miller}}
   );
+  addBool(P::RememberFolderViews, "Remember View and Sort per Folder");
   addChoice(
       P::Density, "Density",
       {{"Compact", luciole::ViewDensity::Compact}, {"Comfortable", luciole::ViewDensity::Comfortable}}
@@ -207,26 +211,25 @@ SettingsDialog::SettingsDialog(
   addChoice(
       P::FilenameTruncation, "Long Filenames",
       {{"Shorten in the Middle", luciole::FilenameTruncation::Middle},
-       {"Shorten at the End", luciole::FilenameTruncation::End}},
-      "List and column views"
+       {"Shorten at the End", luciole::FilenameTruncation::End}}
   );
   card("Files");
   addBool(P::ShowHidden, "Show Hidden Files");
   addBool(P::ShowBackups, "Show Backup Files (*~)");
   card("Sorting");
-  addChoice(
-      P::SortBy, "Sort By",
-      {{"Name", luciole::SortField::Name},
-       {"Type", luciole::SortField::Type},
-       {"Size", luciole::SortField::Size},
-       {"Modified", luciole::SortField::Modified},
-       {"Accessed", luciole::SortField::Accessed},
-       {"Created", luciole::SortField::Created},
-       {"Owner", luciole::SortField::Owner},
-       {"Group", luciole::SortField::Group},
-       {"Permissions", luciole::SortField::Permissions},
-       {"Location", luciole::SortField::Location}}
-  );
+  const Choices<luciole::SortField> sortFields{
+      {"Name", luciole::SortField::Name},
+      {"Type", luciole::SortField::Type},
+      {"Size", luciole::SortField::Size},
+      {"Modified", luciole::SortField::Modified},
+      {"Accessed", luciole::SortField::Accessed},
+      {"Created", luciole::SortField::Created},
+      {"Owner", luciole::SortField::Owner},
+      {"Group", luciole::SortField::Group},
+      {"Permissions", luciole::SortField::Permissions},
+      {"Location", luciole::SortField::Location}
+  };
+  addChoice(P::SortBy, "Sort By", sortFields);
   addBool(P::SortDescending, "Reverse Order");
   addBool(P::DirectoriesFirst, "Folders First");
   addBool(P::HiddenLast, "Hidden Last");
@@ -271,6 +274,23 @@ SettingsDialog::SettingsDialog(
   addNumber(P::GroupColumnWidth, "Group", widths(64, 2048));
   addNumber(P::PermissionsColumnWidth, "Permissions", widths(64, 2048));
   addNumber(P::LocationColumnWidth, "Location", widths(64, 2048));
+  section("File Picker", "folder-search");
+  card("Opening");
+  addChoice(
+      P::ChooserStartFolder, "Start Folder",
+      {{"Home", luciole::ChooserStartFolder::Home}, {"Last Used Folder", luciole::ChooserStartFolder::Last}},
+      "When the application suggests no folder"
+  );
+  addBool(P::ChooserShowPreview, "Show Preview");
+  card("View");
+  addChoice(P::ChooserViewMode, "View", {{"Grid", luciole::ViewMode::Grid}, {"List", luciole::ViewMode::List}});
+  addNumber(P::ChooserGridIconSize, "Grid Icon Size", {luciole::kGridIconSizes.begin(), luciole::kGridIconSizes.end()});
+  addBool(P::ChooserShowHidden, "Show Hidden Files");
+  card("Sorting");
+  addChoice(P::ChooserSortBy, "Sort By", sortFields);
+  addBool(P::ChooserSortDescending, "Reverse Order");
+  addBool(P::ChooserDirectoriesFirst, "Folders First");
+  addBool(P::ChooserHiddenLast, "Hidden Last");
   section("Thumbnails", "photo");
   card("Generation");
   addChoice(
@@ -594,13 +614,15 @@ void SettingsDialog::selectKeybindScope(std::size_t selected) {
   m_body->requestScrollToOffset(0);
 }
 
-void SettingsDialog::addBool(luciole::PreferenceKey<bool> key, const std::string& title) {
+void SettingsDialog::addBool(luciole::PreferenceKey<bool> key, const std::string& title, std::string subtitle) {
   Toggle* control = nullptr;
   auto row = ui::row(
       {.justify = FlexJustify::End, .width = 180.0F},
       ui::toggle({.out = &control, .onChange = [this, key](bool value) { send(key, std::optional(value)); }})
   );
-  addRow<bool>(key, title, [control](bool value) { control->setCheckedImmediate(value); }, std::move(row));
+  addRow<bool>(
+      key, title, [control](bool value) { control->setCheckedImmediate(value); }, std::move(row), std::move(subtitle)
+  );
 }
 
 void SettingsDialog::addNumber(

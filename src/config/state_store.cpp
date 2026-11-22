@@ -90,6 +90,9 @@ namespace {
         }
       }
     }
+    if (state.chooserFolder) {
+      location(*state.chooserFolder, "chooser_folder_uri");
+    }
     return issues;
   }
 
@@ -181,7 +184,8 @@ namespace {
     }
     Decoder decoder(path);
     decoder.unknownKeys(
-        *table, "", {"schema_version", "places_customized", "bookmarks", "windows"}, "unknown state field"
+        *table, "", {"schema_version", "places_customized", "bookmarks", "windows", "chooser_folder_uri"},
+        "unknown state field"
     );
     const auto* version = table->get("schema_version");
     if (version == nullptr || !luciole::isSchemaVersion(*version)) {
@@ -228,6 +232,9 @@ namespace {
         }
       }
     }
+    if (table->contains("chooser_folder_uri")) {
+      state.chooserFolder = decoder.location(*table, "chooser_folder_uri", "chooser_folder_uri");
+    }
     if (!decoder.issues.empty()) {
       return std::unexpected(std::move(decoder.issues));
     }
@@ -262,12 +269,15 @@ namespace {
           toml::table{{"active_tab", static_cast<std::int64_t>(window.activeTab)}, {"tabs", std::move(tabs)}}
       );
     }
-    const toml::table document{
+    toml::table document{
         {"schema_version", luciole::kSchemaVersion},
         {"places_customized", state.placesCustomized},
         {"bookmarks", std::move(bookmarks)},
         {"windows", std::move(windows)}
     };
+    if (state.chooserFolder) {
+      document.insert("chooser_folder_uri", state.chooserFolder->uri());
+    }
     // Adapted from Noctalia StateStore's canonical TOML formatting.
     std::ostringstream output;
     output << toml::toml_formatter{
@@ -332,16 +342,22 @@ luciole::AtomicWriteState luciole::StateStore::saveBookmarks(std::vector<Bookmar
   auto proposed = m_state;
   proposed.bookmarks = std::move(bookmarks);
   proposed.placesCustomized = true;
-  return save(std::move(proposed), true);
+  return save(std::move(proposed), Section::Bookmarks);
 }
 
 luciole::AtomicWriteState luciole::StateStore::saveWindows(std::vector<SavedWindow> windows) {
   auto proposed = m_state;
   proposed.windows = std::move(windows);
-  return save(std::move(proposed), false);
+  return save(std::move(proposed), Section::Windows);
 }
 
-luciole::AtomicWriteState luciole::StateStore::save(SessionState proposed, bool bookmarks) {
+luciole::AtomicWriteState luciole::StateStore::saveChooserFolder(Location folder) {
+  auto proposed = m_state;
+  proposed.chooserFolder = std::move(folder);
+  return save(std::move(proposed), Section::ChooserFolder);
+}
+
+luciole::AtomicWriteState luciole::StateStore::save(SessionState proposed, Section section) {
   m_issues.clear();
   if (!m_loaded || !validPath()) {
     m_issues.push_back(problem(m_path, {}, "load a valid state snapshot before saving"));
@@ -359,21 +375,37 @@ luciole::AtomicWriteState luciole::StateStore::save(SessionState proposed, bool 
           m_issues = std::move(current.error());
           return std::unexpected("invalid existing state; repair or remove it explicitly before saving");
         }
-        const bool unchanged = bookmarks
-            ? current->bookmarks == proposed.bookmarks && current->placesCustomized == proposed.placesCustomized
-            : current->windows == proposed.windows;
-        const bool matches = bookmarks
-            ? current->bookmarks == m_state.bookmarks && current->placesCustomized == m_state.placesCustomized
-            : current->windows == m_state.windows;
+        bool unchanged = false;
+        bool matches = true; // The last picked folder simply wins over another writer's.
+        switch (section) {
+        case Section::Bookmarks:
+          unchanged =
+              current->bookmarks == proposed.bookmarks && current->placesCustomized == proposed.placesCustomized;
+          matches = current->bookmarks == m_state.bookmarks && current->placesCustomized == m_state.placesCustomized;
+          break;
+        case Section::Windows:
+          unchanged = current->windows == proposed.windows;
+          matches = current->windows == m_state.windows;
+          break;
+        case Section::ChooserFolder:
+          unchanged = current->chooserFolder == proposed.chooserFolder;
+          break;
+        }
         if (!unchanged && !matches) {
           return std::unexpected("state section changed in another writer; reload before retrying");
         }
         candidate = std::move(*current);
-        if (bookmarks) {
+        switch (section) {
+        case Section::Bookmarks:
           candidate.bookmarks = std::move(proposed.bookmarks);
           candidate.placesCustomized = proposed.placesCustomized;
-        } else {
+          break;
+        case Section::Windows:
           candidate.windows = std::move(proposed.windows);
+          break;
+        case Section::ChooserFolder:
+          candidate.chooserFolder = std::move(proposed.chooserFolder);
+          break;
         }
         if (unchanged) {
           return std::nullopt;

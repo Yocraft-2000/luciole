@@ -176,6 +176,49 @@ luciole::PreparedProgram luciole::prepareProgram(const Location& location, const
   return result;
 }
 
+std::optional<luciole::PreparedProgram>
+luciole::prepareApplication(const Location& location, const CancelToken& token) {
+  check(token);
+  if (!location.isNative() || location.isTrash() || location.basename().value_or("").ends_with(".desktop")) {
+    return std::nullopt;
+  }
+  const auto file = gioFile(location);
+  GError* raw = nullptr;
+  const GioPtr<GFileInfo> info(g_file_query_info(
+      file.get(),
+      G_FILE_ATTRIBUTE_STANDARD_TYPE "," G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE "," G_FILE_ATTRIBUTE_ACCESS_CAN_EXECUTE,
+      G_FILE_QUERY_INFO_NONE, gioCancellable(token), &raw
+  ));
+  const GErrorPtr error(raw);
+  if (!info) {
+    throw FileErrorException(fileError(*error));
+  }
+  const char* type = g_file_info_get_content_type(info.get());
+  if (g_file_info_get_file_type(info.get()) != G_FILE_TYPE_REGULAR
+      || infoBoolean(info.get(), G_FILE_ATTRIBUTE_ACCESS_CAN_EXECUTE) != true
+      || !type
+      || !g_content_type_is_a(type, "application/x-executable")) {
+    return std::nullopt;
+  }
+  PreparedProgram program;
+  try {
+    program = prepareProgram(location, token);
+  } catch (const FileErrorException& failure) {
+    if (failure.error().kind == FileErrorKind::Unsupported) {
+      return std::nullopt;
+    }
+    throw;
+  }
+  std::array<char, 4> header{};
+  // Check the held program too: a replaced MIME-query target must not turn Open into script execution.
+  if (::pread(program.data->descriptor.get(), header.data(), header.size(), 0) != 4
+      || std::memcmp(header.data(), "\177ELF", 4) != 0) {
+    return std::nullopt;
+  }
+  validate(*program.data, token);
+  return program;
+}
+
 void luciole::launchProgram(
     const PreparedProgram& program, const Location& workingDirectory, const std::vector<Location>& arguments,
     bool terminal, const std::string& activationToken, const CancelToken& token, const std::string& terminalCommand

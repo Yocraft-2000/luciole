@@ -282,6 +282,66 @@ namespace {
     fs::create_symlink(f.root / "old-program", link);
     fails(FileErrorKind::Changed, [&] { f.run(linked); });
   }
+  void testApplicationOpening(Fixture& f) {
+    const auto binary = f.root / "native application ' % $(touch CANARY) café";
+    fs::copy_file("/proc/self/exe", binary);
+    TEST_CHECK(::chmod(binary.c_str(), 0700) == 0);
+    const auto location = Location::fromPath(binary.native());
+    auto prepared = prepareApplication(location, {});
+    TEST_CHECK(prepared && !prepared->desktop && records(f.log).size() == f.launches);
+    g_setenv("NF_EXEC_BINARY_FIXTURE", "1", true);
+    const auto argument = Location::fromPath((f.root / "literal ' % 日本語.txt").native());
+    const auto launched = f.run(*prepared, {argument}, false, "binary-open-token");
+    TEST_CHECK(launched["argv"] == Json::array({hex(binary.native()), hex(*argument.nativePath())}));
+    TEST_CHECK(launched["cwd"] == hex(*f.cwd.nativePath()) && launched["token"] == "binary-open-token");
+    TEST_CHECK(launched["startup"].is_null() && !fs::exists(f.root / "working/CANARY"));
+    const auto link = f.root / "binary-link";
+    fs::create_symlink(binary.filename(), link);
+    prepared = prepareApplication(Location::fromPath(link.native()), {});
+    TEST_CHECK(prepared && f.run(*prepared)["argv"][0] == hex(link.native()));
+    fs::remove(link);
+    fs::create_symlink("missing-target", link);
+    fails(FileErrorKind::Changed, [&] { f.run(*prepared); });
+    TEST_CHECK(::chmod(binary.c_str(), 0600) == 0);
+    TEST_CHECK(!prepareApplication(location, {}));
+    TEST_CHECK(::chmod(binary.c_str(), 0700) == 0);
+    prepared = prepareApplication(location, {});
+    TEST_CHECK(prepared);
+    fs::rename(binary, f.root / "original-binary");
+    write(binary, f.recorder, true);
+    fails(FileErrorKind::Changed, [&] { f.run(*prepared); });
+    g_unsetenv("NF_EXEC_BINARY_FIXTURE");
+    for (const auto* name : {"script.sh", "extensionless-script", "script.AppImage", "launcher.desktop"}) {
+      const auto script = f.root / name;
+      write(
+          script,
+          name == std::string_view("launcher.desktop")
+              ? "[Desktop Entry]\nType=Application\nName=Fixture\nExec=/bin/false\n"
+              : f.recorder,
+          true
+      );
+      TEST_CHECK(!prepareApplication(Location::fromPath(script.native()), {}));
+    }
+    const auto document = f.root / "document.txt";
+    write(document, "ordinary document\n", true);
+    TEST_CHECK(!prepareApplication(Location::fromPath(document.native()), {}));
+    const auto library = f.root / "library.so";
+    fs::copy_file(f.root / "original-binary", library);
+    TEST_CHECK(::chmod(library.c_str(), 0700) == 0);
+    TEST_CHECK(!prepareApplication(Location::fromPath(library.native()), {}));
+    const auto windows = f.root / "windows.exe";
+    write(windows, "MZ executable fixture\n", true);
+    TEST_CHECK(!prepareApplication(Location::fromPath(windows.native()), {}));
+    TEST_CHECK(!prepareApplication(f.cwd, {}));
+    TEST_CHECK(!prepareApplication(Location::fromUri("sftp://example.invalid/program"), {}));
+    TEST_CHECK(!prepareApplication(Location::trash(), {}));
+    const CancelToken cancelled;
+    cancelled.cancel();
+    fails(FileErrorKind::Cancelled, [&] { (void)prepareApplication(location, cancelled); });
+    fails(FileErrorKind::Missing, [&] {
+      (void)prepareApplication(Location::fromPath((f.root / "absent-program").native()), {});
+    });
+  }
   void testRefusals(Fixture& f) {
     const auto file = f.root / "not-executable.py";
     write(file, f.recorder);
@@ -376,7 +436,23 @@ namespace {
   }
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+  if (g_getenv("NF_EXEC_BINARY_FIXTURE")) {
+    std::vector<std::string> arguments;
+    arguments.reserve(static_cast<std::size_t>(argc));
+    for (int index = 0; index < argc; ++index) {
+      arguments.push_back(hex(argv[index]));
+    }
+    const auto value = [](const char* name) -> Json {
+      const char* text = g_getenv(name);
+      return text ? Json(text) : Json(nullptr);
+    };
+    std::ofstream(g_getenv("NF_EXEC_TEST_LOG"), std::ios::app)
+        << Json{{"argv", arguments}, {"cwd", hex(fs::current_path().native())}, {"token", value("XDG_ACTIVATION_TOKEN")}, {"startup", value("DESKTOP_STARTUP_ID")}}
+               .dump()
+        << '\n';
+    return 0;
+  }
   char temporary[] = "/tmp/luciole-program-test-XXXXXX";
   TEST_CHECK(mkdtemp(temporary));
   const fs::path root(temporary);
@@ -399,6 +475,7 @@ int main() {
     Fixture fixture(root, python.get());
     testTerminalPolicy(fixture);
     testPrograms(fixture);
+    testApplicationOpening(fixture);
     testRefusals(fixture);
     testDesktop(fixture);
     testScripts(fixture);

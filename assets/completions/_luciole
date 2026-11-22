@@ -1,7 +1,7 @@
 #compdef luciole
 _arguments \
-  '--help[Show help]' \
-  '--version[Show version]' \
+  '(- *)'{-h,--help}'[Show help]' \
+  '(- *)'{-v,--version}'[Show version]' \
   '1:command or directory:->first' \
   '*::argument:->arguments'
 

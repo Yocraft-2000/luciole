@@ -63,6 +63,12 @@ namespace {
   constexpr auto kViewModes = std::to_array<Named<luciole::ViewMode>>(
       {{luciole::ViewMode::List, "list"}, {luciole::ViewMode::Grid, "grid"}, {luciole::ViewMode::Miller, "miller"}}
   );
+  // File pickers have no Columns view: it enters folders on selection, which choosing a folder needs.
+  constexpr auto kChooserViewModes =
+      std::to_array<Named<luciole::ViewMode>>({{luciole::ViewMode::List, "list"}, {luciole::ViewMode::Grid, "grid"}});
+  constexpr auto kChooserStartFolders = std::to_array<Named<luciole::ChooserStartFolder>>(
+      {{luciole::ChooserStartFolder::Home, "home"}, {luciole::ChooserStartFolder::Last, "last"}}
+  );
   constexpr auto kDensities = std::to_array<Named<luciole::ViewDensity>>(
       {{luciole::ViewDensity::Compact, "compact"}, {luciole::ViewDensity::Comfortable, "comfortable"}}
   );
@@ -595,6 +601,10 @@ namespace {
   // List and Columns icon sizes; 0 keeps the view's default size.
   bool rowIconSize(int value) { return value == 0 || std::ranges::contains(luciole::kRowIconSizes, value); }
   constexpr Rule<int> kRowIconSize{rowIconSize, "expected 0 or integer icon size 16, 20, 24, 28, 32, 40, 48, or 64"};
+  constexpr Rule<int> kGridIconSize{
+      [](int value) { return std::ranges::contains(luciole::kGridIconSizes, value); },
+      "expected integer icon size 32, 48, 64, 80, 96, 128, 160, 192, or 256"
+  };
 
   using P = luciole::BrowserPreference;
   using S = BrowserSettings;
@@ -618,6 +628,7 @@ namespace {
       ),
       describe(P::SwitchToNewTab, "switch_to_new_tab", [](S& s) -> auto& { return s.switchToNewTab; }),
       describe(P::RestoreLastWindow, "restore_last_window", [](S& s) -> auto& { return s.restoreLastWindow; }),
+      describe(P::SingleWindow, "single_window", [](S& s) -> auto& { return s.singleWindow; }),
       describe(P::ShowHidden, "show_hidden", [](S& s) -> auto& { return s.showHidden; }),
       describe(P::ShowBackups, "show_backups", [](S& s) -> auto& { return s.showBackups; }),
       describe(P::AlwaysShowTabBar, "always_show_tab_bar", [](S& s) -> auto& { return s.alwaysShowTabBar; }),
@@ -639,10 +650,9 @@ namespace {
       describe(P::DirectoriesFirst, "directories_first", [](S& s) -> auto& { return s.sort.directoriesFirst; }),
       describe(P::HiddenLast, "hidden_last", [](S& s) -> auto& { return s.sort.hiddenLast; }),
       describe(P::ViewMode, "view_mode", [](S& s) -> auto& { return s.viewMode; }, {kViewModes}),
+      describe(P::RememberFolderViews, "remember_folder_views", [](S& s) -> auto& { return s.rememberFolderViews; }),
       describe(
-          P::GridIconSize, "grid_icon_size", [](S& s) -> auto& { return s.gridIconSize; },
-          {[](int value) { return std::ranges::contains(luciole::kGridIconSizes, value); },
-           "expected integer icon size 32, 48, 64, 80, 96, 128, 160, 192, or 256"}
+          P::GridIconSize, "grid_icon_size", [](S& s) -> auto& { return s.gridIconSize; }, kGridIconSize
       ),
       describe(
           P::ListIconSize, "list_icon_size", [](S& s) -> auto& { return s.listIconSize; }, kRowIconSize
@@ -674,6 +684,31 @@ namespace {
       describe(P::ExpandableFolders, "expandable_folders", [](S& s) -> auto& { return s.expandableFolders; }),
       describe(P::ShowPreview, "show_preview", [](S& s) -> auto& { return s.showPreview; }),
       describe(P::ChooserShowPreview, "chooser_show_preview", [](S& s) -> auto& { return s.chooserShowPreview; }),
+      describe(
+          P::ChooserStartFolder, "chooser_start_folder", [](S& s) -> auto& { return s.chooserStartFolder; },
+          {kChooserStartFolders}
+      ),
+      describe(P::ChooserSortBy, "chooser_sort_by", [](S& s) -> auto& { return s.chooserSort.field; }, {kSortFields}),
+      describe(
+          P::ChooserSortDescending, "chooser_sort_descending", [](S& s) -> auto& { return s.chooserSort.descending; }
+      ),
+      describe(
+          P::ChooserDirectoriesFirst, "chooser_directories_first",
+          [](S& s) -> auto& { return s.chooserSort.directoriesFirst; }
+      ),
+      describe(P::ChooserHiddenLast, "chooser_hidden_last", [](S& s) -> auto& { return s.chooserSort.hiddenLast; }),
+      describe(
+          P::ChooserViewMode, "chooser_view_mode", [](S& s) -> auto& { return s.chooserViewMode; }, {kChooserViewModes}
+      ),
+      describe(P::ChooserShowHidden, "chooser_show_hidden", [](S& s) -> auto& { return s.chooserShowHidden; }),
+      describe(
+          P::ChooserGridIconSize, "chooser_grid_icon_size", [](S& s) -> auto& { return s.chooserGridIconSize; },
+          kGridIconSize
+      ),
+      describe(
+          P::ChooserListIconSize, "chooser_list_icon_size", [](S& s) -> auto& { return s.chooserListIconSize; },
+          kRowIconSize
+      ),
       describe(
           P::PreviewWidth, "preview_width", [](S& s) -> auto& { return s.previewWidth; },
           {between<208, 800>, "expected integer preview width from 208 to 800"}
@@ -1290,6 +1325,7 @@ template luciole::ViewDensity& luciole::preferenceValue(BrowserSettings&, Prefer
 template luciole::FilenameTruncation& luciole::preferenceValue(BrowserSettings&, PreferenceKey<FilenameTruncation>);
 template luciole::DetailsColumnOrder& luciole::preferenceValue(BrowserSettings&, PreferenceKey<DetailsColumnOrder>);
 template luciole::ThumbnailPolicy& luciole::preferenceValue(BrowserSettings&, PreferenceKey<ThumbnailPolicy>);
+template luciole::ChooserStartFolder& luciole::preferenceValue(BrowserSettings&, PreferenceKey<ChooserStartFolder>);
 template const bool& luciole::preferenceValue(const BrowserSettings&, PreferenceKey<bool>);
 template const int& luciole::preferenceValue(const BrowserSettings&, PreferenceKey<int>);
 template const double& luciole::preferenceValue(const BrowserSettings&, PreferenceKey<double>);
@@ -1305,6 +1341,25 @@ template const luciole::DetailsColumnOrder&
 luciole::preferenceValue(const BrowserSettings&, PreferenceKey<DetailsColumnOrder>);
 template const luciole::ThumbnailPolicy&
 luciole::preferenceValue(const BrowserSettings&, PreferenceKey<ThumbnailPolicy>);
+template const luciole::ChooserStartFolder&
+luciole::preferenceValue(const BrowserSettings&, PreferenceKey<ChooserStartFolder>);
+
+std::string_view luciole::sortFieldName(SortField field) {
+  const auto* found = std::ranges::find(kSortFields, field, &Named<SortField>::value);
+  return found != kSortFields.end() ? found->name : std::string_view{};
+}
+std::optional<luciole::SortField> luciole::sortFieldFromName(std::string_view name) {
+  const auto* found = std::ranges::find(kSortFields, name, &Named<SortField>::name);
+  return found != kSortFields.end() ? std::optional(found->value) : std::nullopt;
+}
+std::string_view luciole::viewModeName(ViewMode mode) {
+  const auto* found = std::ranges::find(kViewModes, mode, &Named<ViewMode>::value);
+  return found != kViewModes.end() ? found->name : std::string_view{};
+}
+std::optional<luciole::ViewMode> luciole::viewModeFromName(std::string_view name) {
+  const auto* found = std::ranges::find(kViewModes, name, &Named<ViewMode>::name);
+  return found != kViewModes.end() ? std::optional(found->value) : std::nullopt;
+}
 
 std::vector<luciole::OverrideEdit> luciole::inheritAllPreferences() {
   std::vector<OverrideEdit> edits;

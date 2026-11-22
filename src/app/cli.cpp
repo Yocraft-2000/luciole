@@ -3,6 +3,7 @@
 #include "app/application.h"
 #include "config/settings.h"
 #include "luciole_build_info.h"
+#include "luciole_build_revision.h"
 #include "luciole_completions.h"
 #include "thumbnails/preview_metadata.h"
 #include "thumbnails/thumbnail_worker.h"
@@ -14,14 +15,16 @@
 namespace {
 
   constexpr std::string_view kHelp =
-      R"(Usage: luciole [--help | --version | completions <shell> | config validate <file>]
+      R"(Usage: luciole [--] [directory]
+       luciole -h | --help | -v | --version
+       luciole completions <shell>
+       luciole config validate <file>
 
-Open Luciole in Home, or pass one directory path/URI to browse.
-Usage: luciole [directory]
+Open Luciole in Home, or browse one directory path or URI.
 
 Options:
-  --help                 Show this help
-  --version              Show version and explicit build revision
+  -h, --help             Show this help
+  -v, --version          Show version and build revision
   completions <shell>    Print bash, zsh, or fish shell completions
   config validate <file> Validate one TOML settings file without opening a window
 )";
@@ -55,12 +58,17 @@ int luciole::runCli(std::span<const std::string_view> args) {
   if (args.size() == 1 && args.front() == "--file-chooser-service") {
     return runApplication(std::nullopt, StartupMode::FileChooserService);
   }
-  if (args.size() == 1 && args.front() == "--help") {
+  if (args.size() == 1 && (args.front() == "--help" || args.front() == "-h")) {
     std::print("{}", kHelp);
     return EXIT_SUCCESS;
   }
-  if (args.size() == 1 && args.front() == "--version") {
-    std::println("luciole {} ({})", LUCIOLE_VERSION, LUCIOLE_BUILD_REVISION);
+  if (args.size() == 1 && (args.front() == "--version" || args.front() == "-v")) {
+    // Same rule as the About page: a build without a known revision omits it.
+    if (std::string_view(LUCIOLE_BUILD_REVISION) == "unknown") {
+      std::println("luciole {}", LUCIOLE_VERSION);
+    } else {
+      std::println("luciole {} ({})", LUCIOLE_VERSION, LUCIOLE_BUILD_REVISION);
+    }
     return EXIT_SUCCESS;
   }
   if (args.size() == 2 && args.front() == "completions") {

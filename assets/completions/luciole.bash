@@ -9,7 +9,7 @@ _luciole() {
     compopt -o filenames
   elif [[ $COMP_CWORD -eq 1 ]]; then
     mapfile -t COMPREPLY < <(
-      compgen -W '--help --version completions config' -- "$cur"
+      compgen -W '-h --help -v --version completions config' -- "$cur"
       compgen -d -- "$cur"
     )
     compopt -o filenames

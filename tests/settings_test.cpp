@@ -190,6 +190,24 @@ namespace {
     luciole::ConfigService restored(fixture.paths());
     TEST_CHECK(restored.reload() && !restored.settings().browser.restoreLastWindow);
   }
+  void testSingleWindowPreference() {
+    Fixture fixture;
+    luciole::ConfigService service(fixture.paths());
+    TEST_CHECK(service.reload() && !service.settings().browser.singleWindow);
+    fixture.write("config.toml", "[browser]\nsingle_window = true\n");
+    TEST_CHECK(service.reload() && service.settings().browser.singleWindow);
+    const std::array off{luciole::OverrideEdit{luciole::BrowserPreference::SingleWindow, false}};
+    TEST_CHECK(service.saveOverrides(off) == luciole::AtomicWriteState::Durable);
+    luciole::ConfigService restored(fixture.paths());
+    TEST_CHECK(restored.reload() && !restored.settings().browser.singleWindow);
+    const std::array reset{luciole::OverrideEdit{luciole::BrowserPreference::SingleWindow, std::nullopt}};
+    TEST_CHECK(restored.saveOverrides(reset) == luciole::AtomicWriteState::Durable);
+    TEST_CHECK(restored.reload() && restored.settings().browser.singleWindow);
+    fixture.write("config.toml", "[browser]\nsingle_window = 'true'\n");
+    TEST_CHECK(!restored.reload() && restored.settings().browser.singleWindow);
+    fixture.write("config.toml", "[browser]\nsingle_window = false\n");
+    TEST_CHECK(restored.reload() && !restored.settings().browser.singleWindow);
+  }
   void testBackupPreference() {
     Fixture fixture;
     luciole::ConfigService service(fixture.paths());
@@ -720,6 +738,17 @@ namespace {
         == luciole::AtomicWriteState::Durable
     );
     TEST_CHECK(config.settings().browser.chooserShowPreview && config.settings().browser.showPreview);
+    // The picker's layout is separate too, and it has no Columns view.
+    TEST_CHECK(
+        config.saveOverrides(std::array{luciole::OverrideEdit{P::ChooserViewMode, luciole::ViewMode::Grid}})
+        == luciole::AtomicWriteState::Durable
+    );
+    TEST_CHECK(
+        config.settings().browser.chooserViewMode == luciole::ViewMode::Grid
+        && config.settings().browser.viewMode == luciole::ViewMode::List
+    );
+    fixture.write("config.toml", "[browser]\nchooser_view_mode = 'miller'\n");
+    TEST_CHECK(!luciole::validateConfigFile(fixture.paths().base).empty());
     fixture.write("config.toml", "[browser]\nshow_preview = 'true'\n");
     TEST_CHECK(!luciole::validateConfigFile(fixture.paths().base).empty());
     fixture.write("config.toml", "[browser]\npreview_width = 444\nshow_preview = true\n");
@@ -1531,6 +1560,7 @@ int main() {
     testDeletionConfirmationPreference();
     testPermanentDeletionMenuPreference();
     testRestoreLastWindowPreference();
+    testSingleWindowPreference();
     testMillerSettings();
     testMillerParents();
     testUnknownSettings();

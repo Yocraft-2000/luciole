@@ -6,6 +6,7 @@
   outputs =
     { self, nixpkgs }:
     let
+      buildRevision = self.shortRev or self.dirtyShortRev or "unknown";
       systems = [
         "x86_64-linux"
         "aarch64-linux"
@@ -21,11 +22,11 @@
     in
     {
       overlays.default = final: _prev: {
-        luciole = final.callPackage ./nix/package.nix { };
+        luciole = final.callPackage ./nix/package.nix { inherit buildRevision; };
       };
 
       packages = forEachSystem (pkgs: {
-        default = pkgs.callPackage ./nix/package.nix { };
+        default = pkgs.callPackage ./nix/package.nix { inherit buildRevision; };
       });
 
       apps = forEachSystem (pkgs: {

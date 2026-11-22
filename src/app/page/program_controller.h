@@ -5,6 +5,7 @@
 #include "platform/program_launcher.h"
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 
 class PageContext;
@@ -15,6 +16,7 @@ class ProgramController {
 public:
   ProgramController(PageContext& page, SubmenuController& submenus, WaylandConnection& connection);
   ~ProgramController();
+  void open(const luciole::ActionRequest& request, std::function<void()> openDocument);
   void run(const luciole::ActionRequest& request, bool terminal);
   void scripts(const luciole::ActionRequest& request);
   void closeScripts();

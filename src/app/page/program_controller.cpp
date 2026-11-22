@@ -32,6 +32,36 @@ bool ProgramController::current(const luciole::ActionRequest& request) const {
   return m_page.visible() && m_page.requestCurrent(request, luciole::ActionScope::Targets);
 }
 
+void ProgramController::open(const luciole::ActionRequest& request, std::function<void()> openDocument) {
+  if (!current(request) || request.targets.size() != 1 || busy()) {
+    return;
+  }
+  m_launch = luciole::CancelToken{};
+  const auto token = m_launch;
+  ++m_pending;
+  const std::weak_ptr<int> lifetime = m_lifetime;
+  luciole::runJob<std::optional<luciole::PreparedProgram>>(
+      token,
+      [location = request.targets.front().location, token] { return luciole::prepareApplication(location, token); },
+      [this, lifetime, request, token, openDocument = std::move(openDocument)](auto result) {
+        if (lifetime.expired()) {
+          return;
+        }
+        --m_pending;
+        if (token.cancelled() || !current(request)) {
+          return;
+        }
+        if (!result) {
+          m_page.actionError(result.error().message);
+        } else if (*result) {
+          launch(request, std::move(**result), false, false);
+        } else {
+          openDocument();
+        }
+      }
+  );
+}
+
 void ProgramController::run(const luciole::ActionRequest& request, bool terminal) {
   if (!current(request) || request.targets.size() != 1 || busy()) {
     return;

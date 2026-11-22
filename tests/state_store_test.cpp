@@ -123,6 +123,18 @@ namespace {
         && read(fixture.path()) == currentBytes
     );
     TEST_CHECK(second.saveBookmarks(c) == AtomicWriteState::Unchanged && second.state() == first.state());
+    // The picker folder is last-writer-wins and leaves the other sections alone.
+    TEST_CHECK(
+        second.saveChooserFolder(Location::fromPath("/tmp/picked")) == AtomicWriteState::Durable
+        && second.state().windows == first.state().windows
+    );
+    TEST_CHECK(first.saveChooserFolder(Location::fromPath("/tmp/picked-again")) == AtomicWriteState::Durable);
+    StateStore reloaded(fixture.path());
+    TEST_CHECK(
+        reloaded.load()
+        && reloaded.state().chooserFolder == Location::fromPath("/tmp/picked-again")
+        && reloaded.state().bookmarks == c
+    );
   }
 
   void testEmptyPlacesSnapshot() {

@@ -2,10 +2,12 @@
 
 #include "browser/selection_details.h"
 #include "fs/cancel_token.h"
+#include "fs/file_query.h"
 #include "fs/location.h"
 #include "thumbnails/preview_metadata.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -41,7 +43,9 @@ public:
   );
 
   // `captureCurrentLocation` reads the permissions of the first target's location instead of its listed entry.
-  void show(const std::vector<luciole::DirectoryEntry>& targets, bool captureCurrentLocation = false);
+  // `drive` marks the single target as a mounted drive's root: the dialog adds its file system type and free space.
+  void
+  show(const std::vector<luciole::DirectoryEntry>& targets, bool captureCurrentLocation = false, bool drive = false);
   // Rebinds the header icon after the folder's custom icon changed elsewhere.
   void refreshFolderIcon(const luciole::Location& folder);
   // Owned permission job change: sync the dialog on the next frame, or report a job whose dialog closed.
@@ -71,6 +75,10 @@ private:
   void sync();
   void syncMetadata();
   void close();
+  // "X free of Y (Z% used)" for the drive dialog, or its pending/unknown text.
+  std::string driveFreeSpace() const;
+  // Live filesystem type/size/free for the drive dialog; refreshes its rows on answer.
+  void queryDriveFilesystem(const luciole::Location& root);
 
   PageContext& m_page;
   // The dialog's job: reads the targets, then applies changes.
@@ -102,6 +110,13 @@ private:
   luciole::CancelToken m_iconQuery;
   // The single shown folder's location, when the header offers an icon change.
   std::optional<luciole::Location> m_identityLocation;
+  // The mounted drive's root for a drive dialog, and the filesystem query filling
+  // in its type and free space.
+  std::optional<luciole::Location> m_driveRoot;
+  // Set when the filesystem query answers, even on failure (as all-unknown).
+  std::optional<luciole::FilesystemFacts> m_driveFilesystemInfo;
+  std::uint64_t m_filesystemSerial = 0;
+  luciole::CancelToken m_filesystemQuery;
   // Location, size and similar entry facts that lead the Details table.
   luciole::MetadataFields m_basicFields;
   float m_metadataWidth = 0;

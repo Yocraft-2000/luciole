@@ -6,6 +6,7 @@
 #include "imaging/svg_rasterizer.h"
 #include "luciole_app_icon.h"
 #include "luciole_build_info.h"
+#include "luciole_build_revision.h"
 #include "platform/file_launcher.h"
 #include "render/core/renderer.h"
 #include "render/core/texture_manager.h"

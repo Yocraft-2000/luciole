@@ -4,6 +4,7 @@
 #include "app/page/page_context.h"
 #include "browser/action_registry.h"
 #include "config/keybinds.h"
+#include "config/settings.h"
 #include "ui/browser/action_shortcuts.h"
 #include "ui/builders.h"
 #include "ui/controls/scroll_view.h"
@@ -127,9 +128,10 @@ void ShortcutsController::open() {
   for (const auto& [text, keys] : fileShortcuts()) {
     row(text, keys);
   }
-  heading("Tabs and windows");
+  heading("Tabs and Windows");
+  const bool singleWindow = m_page.settings().singleWindow;
   for (const auto& [text, keys] : windowShortcuts()) {
-    row(text, keys);
+    row(singleWindow && text == "New tab / new window" ? "New tab" : text, keys);
   }
   heading("Commands");
   for (const auto& definition : luciole::ActionRegistry::definitions()) {

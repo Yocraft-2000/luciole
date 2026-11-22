@@ -34,6 +34,7 @@ drop_action = "menu"
 switch_to_new_tab = true
 confirm_permanent_deletion = true
 restore_last_window = false
+single_window = false
 compact_menus = true
 show_close_buttons = true
 background_opacity = 1.0
@@ -64,11 +65,12 @@ All keys below belong in `[browser]`. Dimensions are logical pixels unless state
 | Key | Default | Accepted values / meaning |
 | --- | --- | --- |
 | `view_mode` | `"list"` | `"list"`, `"grid"`, `"miller"` |
+| `remember_folder_views` | `false` | Sort and Grid/List changes apply to the current folder only and are remembered for it; file picker windows keep their own. See [per-folder view and sort](browsing.md#per-folder-view-and-sort) |
 | `grid_icon_size` | `96` | `32`, `48`, `64`, `80`, `96`, `128`, `160`, `192`, `256` |
 | `list_icon_size` | `0` | `0` uses the default size, `32`; or `16`, `20`, `24`, `28`, `32`, `40`, `48`, `64`. Rows grow with the icon. |
 | `miller_icon_size` | `0` | Columns view icon size: `0` uses the density's size (`20` compact, `28` comfortable); otherwise the same values as `list_icon_size` |
 | `density` | `"compact"` | `"compact"`, `"comfortable"` |
-| `filename_truncation` | `"middle"` | `"middle"` keeps both ends of long filenames; `"end"` keeps the beginning. Applies to List and Columns. |
+| `filename_truncation` | `"middle"` | `"middle"` keeps both ends of long filenames; `"end"` keeps the beginning. Applies to all views; Grid retains two-line wrapping. |
 | `show_size_caption` | `false` | Size caption in Grid view |
 | `show_type_caption` | `false` | Type caption in Grid view |
 | `show_modified_caption` | `false` | Modified-time caption in Grid view |
@@ -76,7 +78,7 @@ All keys below belong in `[browser]`. Dimensions are logical pixels unless state
 | `show_hidden` | `false` | Hidden entries |
 | `show_backups` | `true` | Non-directory backup names ending in `~` |
 | `always_show_tab_bar` | `true` | Keep the tab bar visible when a window has only one tab |
-| `always_show_status_bar` | `false` | Keep the status pill visible when idle, showing the item count and free space |
+| `always_show_status_bar` | `false` | Keep the status bar visible when idle, showing the item count and free space |
 | `compact_menus` | `true` | Reduce the row height and padding in context menus without shrinking their text |
 | `show_close_buttons` | `true` | Show the glyph close buttons on tabs, dialogs, panes, the preview and archives. Disable to hide them live; the window controls, Escape and Close/Cancel actions still close things |
 | `reduce_animations` | `false` | Skip animated transitions, such as file entries fading in as they scroll into Grid and List views, smooth scrolling and the sidebar drawer. Applies live |
@@ -91,6 +93,7 @@ All keys below belong in `[browser]`. Dimensions are logical pixels unless state
 | `show_permanent_deletion` | `false` | Show Delete Permanently in context menus for items outside Trash; Shift+Delete and Trash actions stay available either way |
 | `switch_to_new_tab` | `true` | Switch when opening a folder in a new tab; disable to keep browsing the current tab |
 | `restore_last_window` | `false` | Reopen tabs from the last closed window once in a new window, or at startup without a requested location |
+| `single_window` | `false` | Keep one window: launches with a path and FileManager1 show-items requests open tabs in the existing window instead of a new one, launches without a path raise it, New Window opens a tab, and tab-moving entries disappear from menus |
 | `terminal_command` | `""` | Terminal command and optional arguments, for example `"foot"`; empty uses `$TERMINAL`, then automatic discovery |
 | `sort_by` | `"name"` | `"name"`, `"type"`, `"size"`, `"modified"`, `"accessed"`, `"created"`, `"owner"`, `"group"`, `"permissions"`, `"location"` |
 | `sort_descending` | `false` | Reverse sort direction |
@@ -104,6 +107,11 @@ All keys below belong in `[browser]`. Dimensions are logical pixels unless state
 | `expandable_folders` | `false` | Expand folders within List view |
 | `show_preview` | `true` | Show the side preview when space permits |
 | `chooser_show_preview` | `false` | Show the side preview in file picker windows; toggling the preview there changes only this key |
+| `chooser_start_folder` | `"home"` | `"home"`, `"last"`; where a file picker opens when the application suggests no folder. `"last"` reopens the folder of the last accepted pick; a folder the application suggests always wins |
+| `chooser_view_mode` | `"list"` | `"list"`, `"grid"`; file picker windows' view, kept apart from `view_mode` |
+| `chooser_sort_by`, `chooser_sort_descending`, `chooser_directories_first`, `chooser_hidden_last` | as `sort_by` and its companions | File picker windows' sorting, kept apart from the browser's |
+| `chooser_show_hidden` | `false` | Show hidden items in file picker windows |
+| `chooser_grid_icon_size`, `chooser_list_icon_size` | as `grid_icon_size`, `list_icon_size` | File picker windows' zoom, kept apart from the browser's |
 | `preview_width` | `320` | Integer `208` through `800` |
 | `miller_column_width` | `260` | Preferred column width, integer `180` through `800` |
 | `miller_show_parents` | `true` | Include parent folders when entering Column view |
@@ -141,7 +149,7 @@ Name accepts `0` for automatic sizing or an integer from `160` through `16384`. 
 | --- | --- | --- |
 | `thumbnail_policy` | `"local"` | `"never"`, `"local"`, `"all"` |
 | `thumbnail_max_file_mib` | `64` | Image/PDF source limit, integer `1` through `1024`; does not limit video/audio file size |
-| `thumbnail_cache_mib` | `1024` | Integer `16` through `8192`; only Luciole-written thumbnails count and are pruned |
+| `thumbnail_cache_mib` | `1024` | Integer `16` through `8192`; bounds the whole shared cache, oldest thumbnails pruned first |
 
 Local policy generates thumbnails for eligible local files. It skips network shares and FUSE mounts without a local disk, such as rclone and sshfs. A FUSE mount of local files that has no disk of its own, such as gocryptfs, is skipped too; choose All Locations to get its thumbnails. To generate thumbnails on mounted network shares such as `/mnt/media`, choose Settings → Thumbnails → Show Thumbnails → All Locations. All permits generation from filesystem paths, including mounted shares, and reuses the shared thumbnail cache. Locations without a filesystem path remain cache-only; Luciole does not download entire remote files for thumbnail generation.
 
@@ -175,11 +183,13 @@ Chords use key names such as `Return`, `Escape`, `Tab`, `space`, `BackSpace`, `D
 
 User bookmarks live in `$XDG_CONFIG_HOME/gtk-3.0/bookmarks`, defaulting to `~/.config/gtk-3.0/bookmarks`, shared with Nemo, Nautilus and GTK file choosers. Each line contains a URI and an optional label separated by a space. The older `~/.gtk-bookmarks` is read as a fallback when the modern file has not been found; edits go to the modern path. Read-only or symlink-managed files can be displayed, but Luciole refuses edits that would replace a read-only or linked file. Old Luciole pins are not migrated.
 
-Built-in Places layout and optional last-window tab state remain in `$XDG_STATE_HOME/luciole/state.toml`, defaulting to `~/.local/state/luciole/state.toml`. Cached user rows there preserve their placement among built-ins; their contents always come from the shared bookmark file. Deleting a shared user bookmark removes it from Luciole even when an old cache row remains. Tab restoration is controlled by `browser.restore_last_window`.
+Built-in Places layout, optional last-window tab state and the last file picker folder remain in `$XDG_STATE_HOME/luciole/state.toml`, defaulting to `~/.local/state/luciole/state.toml`. Cached user rows there preserve their placement among built-ins; their contents always come from the shared bookmark file. Deleting a shared user bookmark removes it from Luciole even when an old cache row remains. Tab restoration is controlled by `browser.restore_last_window`.
+
+Per-folder sort and view choices live in `$XDG_STATE_HOME/luciole/folder_views.toml`, one `[[folders]]` row per folder URI with optional `sort_by`, `sort_descending`, `directories_first`, `hidden_last` and `view_mode` (`"list"` or `"grid"`) fields. Invalid rows are skipped. Luciole replaces an unreadable file with its in-memory settings the next time a folder's settings change. It keeps the 4096 most recently changed folders, or fewer when their rows would make the file larger than 240 KiB; the least recently changed go first.
 
 Custom bookmark icons are saved as an optional `icon` field on the matching bookmark row in this private state file. They are Luciole-only; the shared GTK bookmark format has no icon field.
 
-Thumbnails use the shared `$XDG_CACHE_HOME/thumbnails/` cache plus a Luciole ownership ledger under `$XDG_CACHE_HOME/luciole/`. The default cache root is `~/.cache`. Custom actions live in the [Scripts directory](scripts.md).
+Thumbnails use the shared `$XDG_CACHE_HOME/thumbnails/` cache. The default cache root is `~/.cache`. Custom actions live in the [Scripts directory](scripts.md).
 
 An optional `colors.toml` beside the settings files supplies the supported Noctalia palette handoff. The installed template is `share/luciole/templates/colors.toml`; UI-scale preferences remain planned. See [Packaging](../../PACKAGING.md#configuration-and-writable-data) for the complete ownership and installation notes.
 

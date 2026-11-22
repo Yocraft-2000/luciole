@@ -23,6 +23,8 @@ namespace luciole {
   };
   // Worker-only filesystem inspection and launching. Preparation never executes anything.
   PreparedProgram prepareProgram(const Location& location, const CancelToken& token);
+  // Ordinary Open runs native binary applications; documents, scripts and launchers return no program.
+  std::optional<PreparedProgram> prepareApplication(const Location& location, const CancelToken& token);
   void launchProgram(
       const PreparedProgram& program, const Location& workingDirectory, const std::vector<Location>& arguments,
       bool terminal, const std::string& activationToken, const CancelToken& token,

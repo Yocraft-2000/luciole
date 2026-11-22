@@ -37,6 +37,8 @@ namespace luciole {
     std::vector<Bookmark> bookmarks;
     std::vector<SavedWindow> windows;
     bool placesCustomized = false;
+    // Folder of the last accepted file picker answer.
+    std::optional<Location> chooserFolder;
     bool operator==(const SessionState&) const = default;
   };
 
@@ -52,11 +54,13 @@ namespace luciole {
     bool load(); // Failure preserves the last valid snapshot and the file.
     AtomicWriteState saveBookmarks(std::vector<Bookmark> bookmarks);
     AtomicWriteState saveWindows(std::vector<SavedWindow> windows);
+    AtomicWriteState saveChooserFolder(Location folder);
     const SessionState& state() const { return m_state; }
     const ConfigIssues& issues() const { return m_issues; }
 
   private:
-    AtomicWriteState save(SessionState proposed, bool bookmarks);
+    enum class Section : std::uint8_t { Bookmarks, Windows, ChooserFolder };
+    AtomicWriteState save(SessionState proposed, Section section);
     bool validPath() const;
 
     std::filesystem::path m_path;

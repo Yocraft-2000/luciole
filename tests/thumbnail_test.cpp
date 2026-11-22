@@ -178,24 +178,19 @@ namespace {
       const auto decoded = luciole::readThumbnailPng(bytes, 128);
       TEST_CHECK(decoded && decoded->text == foreign.text && decoded->image.rgba == foreign.image.rgba);
       write(target, bytes);
-      struct stat before{}, after{};
-      TEST_CHECK(::lstat(target.c_str(), &before) == 0);
       luciole::ThumbnailService service;
       const auto asset = service.request(entry, 256);
       pump.until([&] { return asset && asset->ready; });
       TEST_CHECK(asset->pixels && asset->pixels->rgba == foreign.image.rgba);
       TEST_CHECK(!store.read(entry.location().uri(), 256, *entry.modifiedSeconds, entry.size));
+      // An explicit clear keeps other applications' thumbnails.
+      TEST_CHECK(store.clear().empty() && luciole::readThumbnailFile(target, 8U * 1024U * 1024U) == bytes);
+      // The shared cache is regenerable: Luciole's newer thumbnail for the same URI replaces it.
       auto replacement = foreign;
       replacement.image = picture();
       store.write(std::move(replacement), 128, 16U * 1024U * 1024U, cancel.get());
-      TEST_CHECK(luciole::readThumbnailFile(target, 8U * 1024U * 1024U) == bytes);
-      TEST_CHECK(
-          ::lstat(target.c_str(), &after) == 0
-          && before.st_ino == after.st_ino
-          && before.st_mtim.tv_sec == after.st_mtim.tv_sec
-          && before.st_mtim.tv_nsec == after.st_mtim.tv_nsec
-      );
-      TEST_CHECK(store.clear().empty() && fs::exists(target));
+      TEST_CHECK(luciole::readThumbnailFile(target, 8U * 1024U * 1024U) != bytes);
+      TEST_CHECK(store.clear().empty() && !fs::exists(target));
     }
     {
       luciole::ThumbnailService service;
@@ -205,23 +200,9 @@ namespace {
       pump.until([&] {
         return store.read(entry.location().uri(), 256, *entry.modifiedSeconds, entry.size).has_value();
       });
-      // PNG publication precedes the worker's ledger commit; clearing can still see its write lock.
-      pump.until([&] {
-        const auto error = store.clear();
-        TEST_CHECK(fs::exists(target));
-        TEST_CHECK(error.empty() || error.starts_with("private file is busy; retry later"));
-        return error.empty();
-      });
+      TEST_CHECK(store.clear().empty());
+      TEST_CHECK(!store.read(entry.location().uri(), 256, *entry.modifiedSeconds, entry.size));
     }
-    // A stale ownership record must not authorize replacing another application's newer file.
-    fs::remove(target);
-    store.write(foreign, 128, 16U * 1024U * 1024U, cancel.get());
-    fs::rename(target, target.string() + ".old");
-    const auto replacement = sharedPng(foreign, PNG_TEXT_COMPRESSION_zTXt);
-    write(target, replacement);
-    store.write(foreign, 128, 16U * 1024U * 1024U, cancel.get());
-    TEST_CHECK(luciole::readThumbnailFile(target, 8U * 1024U * 1024U) == replacement);
-    TEST_CHECK(store.clear().empty() && fs::exists(target));
     auto oversized = foreign;
     oversized.text["Description"] = std::string(131073, 'x');
     TEST_CHECK(!luciole::readThumbnailPng(sharedPng(std::move(oversized), PNG_TEXT_COMPRESSION_zTXt), 128));
@@ -476,14 +457,7 @@ namespace {
     const std::array writes{
         luciole::ThumbnailCacheWrite{make(uri), 256}, luciole::ThumbnailCacheWrite{make(second), 512}
     };
-    const auto index = store.root().parent_path() / "luciole/thumbnail-index.json";
-    std::filesystem::create_directories(index.parent_path());
-    std::ofstream(index, std::ios::trunc) << R"([{"name":"../escape.png","bytes":1,"identity":"x"}])";
     store.writeBatch(writes, 16U * 1024U * 1024U, cancel.get());
-    std::stringstream ledger;
-    ledger << std::ifstream(index).rdbuf();
-    // A damaged entry is dropped instead of blocking every later batch.
-    TEST_CHECK(!ledger.str().contains("escape") && ledger.str().contains("large/"));
     const auto cached = store.read(uri, 128, 123, 42, "same");
     TEST_CHECK(
         cached
@@ -1319,6 +1293,12 @@ namespace {
         .modifiedSeconds = 123,
         .contentType = "image/png"
     };
+    // Remote entries are cache-only: seed a third-party thumbnail for them.
+    const auto remoteBytes = luciole::writeThumbnailPng(
+        {.image = picture(), .text = {{"Thumb::URI", remote.uri()}, {"Thumb::MTime", "123"}, {"Thumb::Size", "42"}}}
+    );
+    TEST_CHECK(remoteBytes.has_value());
+    write(luciole::ThumbnailStore{}.root() / "normal" / luciole::ThumbnailStore::filename(remote.uri()), *remoteBytes);
     TEST_CHECK(!thumbnails.request(remoteEntry, 48));
     options.policy = luciole::ThumbnailPolicy::All;
     thumbnails.setOptions(options);

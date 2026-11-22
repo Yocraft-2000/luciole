@@ -2,14 +2,18 @@
 
 #include "browser/directory_model.h"
 #include "fs/cancel_token.h"
+#include "fs/folder_totals.h"
 #include "fs/location_mount.h"
+#include "fs/native_listing.h"
 #include "fs/recursive_search.h"
 
+#include <array>
 #include <glib.h>
 
 namespace luciole {
   class DirectoryTree;
   class DriveMonitor;
+  class FolderViewService;
   struct TreeRowInfo;
   struct BrowseViewport {
     ViewMode mode = ViewMode::Grid;
@@ -22,7 +26,12 @@ namespace luciole {
 
   class BrowserController {
   public:
-    BrowserController(SortOptions sort, bool showHidden, bool showBackups = true);
+    BrowserController(
+        SortOptions sort, bool showHidden, bool showBackups = true,
+        const FolderTotalsService::NetworkFilesystemCheck& networkCheck = [](const std::string& path) {
+          return luciole::networkFilesystem(path);
+        }
+    );
     ~BrowserController();
     BrowserController(const BrowserController&) = delete;
     BrowserController& operator=(const BrowserController&) = delete;
@@ -35,6 +44,7 @@ namespace luciole {
     bool openText(const std::string& text);
     void setCaptureViewport(std::function<BrowseViewport()> callback);
     void setViewDefaults(ViewMode mode, int iconSize);
+    // The view mode of folders without their own; the current folder keeps its own mode if it has one.
     void setDefaultViewMode(ViewMode mode) {
       m_defaults.mode = mode;
       m_viewport.mode = mode;
@@ -44,7 +54,21 @@ namespace luciole {
       if (m_restoredViewport) {
         m_restoredViewport->mode = mode;
       }
+      applyFolderView(true);
     }
+    ViewMode defaultViewMode() const { return m_defaults.mode; }
+    // The sort of folders without their own; setting it re-sorts the current folder unless that has its own.
+    void setDefaultSort(SortOptions sort);
+    const SortOptions& defaultSort() const { return m_defaultSort; }
+    // Per-folder settings looked up on every visit; nullptr or a disabled service means the defaults everywhere.
+    // The service must outlive this controller.
+    void setFolderViews(const FolderViewService* views) { m_folderViews = views; }
+    const FolderViewService* folderViews() const { return m_folderViews; }
+    // The current folder's own settings: nullopt while per-folder views are off.
+    std::optional<FolderView> folderView() const;
+    // Applies the current folder's sort and, outside column view, its view mode to the visit after the service or
+    // the defaults changed.
+    void reapplyFolderView();
     void setDefaultIconSize(int size) {
       m_defaults.iconSize = size;
       m_restoring = false;
@@ -82,6 +106,10 @@ namespace luciole {
     bool treeKey(bool expand);
     TreeRowInfo treeRow(EntryId id) const;
 
+    // Folder sizes for the list view's bound rows: lazily walked, cached per entry, invalidated on publication.
+    void requestFolderSize(EntryId id);
+    const FolderTotalsSnapshot* folderSize(EntryId id) const;
+
     std::uint64_t contextSerial() const { return m_contextSerial; }
     bool canBack() const;
     bool canForward() const;
@@ -111,6 +139,21 @@ namespace luciole {
     void applyQueryFilter();
     void updateMetadataPolicy();
     bool waitForVisitMetadata(std::function<void()> callback);
+    // At most two concurrent walks for visible list rows; a finished walk only warms the cache.
+    struct FolderSizeSlot {
+      FolderTotalsService service;
+      EntryId id = 0;
+      bool running = false;
+    };
+    struct FolderSizeCache {
+      FolderTotalsSnapshot totals;
+      std::optional<std::string> etag;
+    };
+    bool folderSizeEligible(const DirectoryEntry& entry) const;
+    void pumpFolderSizes();
+    void folderSizeSlotChanged(std::size_t index);
+    void syncFolderSizes();
+    void releaseFolderSizesUnder(const Location& root);
     bool m_updatingMetadata = false;
     bool m_restoreBulkMetadata = false;
     CancelToken m_duplicateToken;
@@ -122,6 +165,9 @@ namespace luciole {
       std::function<void()> callback;
     };
     std::vector<PendingMetadata> m_pendingMetadata;
+    std::array<FolderSizeSlot, 2> m_folderSizeSlots;
+    std::vector<EntryId> m_folderSizeQueue;
+    std::unordered_map<EntryId, FolderSizeCache> m_folderSizeCache;
     std::shared_ptr<int> m_lifetime = std::make_shared<int>(0);
     DirectoryModel m_model;
     std::unique_ptr<DirectoryTree> m_tree;
@@ -150,9 +196,12 @@ namespace luciole {
     };
     void saveVisit();
     void loadVisit();
+    void applyFolderView(bool viewMode);
     std::optional<Reference> reference(std::optional<EntryId> id) const;
     std::vector<Visit> m_history;
     BrowseViewport m_defaults;
+    SortOptions m_defaultSort;
+    const FolderViewService* m_folderViews = nullptr;
     BrowseViewport m_viewport;
     std::optional<BrowseViewport> m_restoredViewport;
     std::function<BrowseViewport()> m_captureViewport;

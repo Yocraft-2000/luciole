@@ -3,6 +3,7 @@
 #include "app/page/browser_page.h"
 #include "app/workspace_layout.h"
 #include "config/keybinds.h"
+#include "config/state_store.h"
 #include "core/input/key_symbols.h"
 #include "core/log.h"
 #include "fs/background_job.h"
@@ -410,6 +411,21 @@ void FileChooserSession::apply(const luciole::ChooserDecision& decision) {
     }
     result.choices = m_choices;
     kLog.debug("accepting {} item(s)", result.uris.size());
+    if (auto folder = m_page->location()) {
+      // Remembered for chooser_start_folder = "last"; a lost write only costs the next picker's start folder.
+      luciole::runJob<bool>(
+          [folder = std::move(*folder)] mutable {
+            luciole::StateStore store(luciole::StateStore::pathFromEnvironment());
+            return store.load()
+                && store.saveChooserFolder(std::move(folder)) != luciole::AtomicWriteState::NotCommitted;
+          },
+          [](luciole::JobResult<bool> saved) {
+            if (!saved || !*saved) {
+              kLog.warn("cannot remember the file picker folder");
+            }
+          }
+      );
+    }
     m_call->complete(result);
     m_close();
     return;

@@ -316,12 +316,15 @@ void MenuController::openFileMenu(std::optional<luciole::EntryId> id, float x, f
 }
 
 void MenuController::showOpenInMenu(const luciole::ActionRequest& request) {
+  const bool singleWindow = m_page.settings().singleWindow;
   std::vector<ContextMenuControlEntry> entries{
       {.id = NewTab, .label = "New Tab"},
       // Without a second pane, the workspace splits the window to open one.
       {.id = OtherPane, .label = m_page.hasOtherPane() ? "Other Pane" : "New Pane"},
-      {.id = NewWindow, .label = "New Window"}
   };
+  if (!singleWindow) {
+    entries.push_back({.id = NewWindow, .label = "New Window"});
+  }
   m_submenus.show(
       std::move(entries),
       [this, request](int id) {
@@ -753,9 +756,13 @@ void MenuController::showActionMenu(
   }
   for (const auto action : actions) {
     if (action) {
-      entries.push_back(
-          actionEntry(*action, request, radio && *action != Action::FoldersFirst && *action != Action::HiddenLast)
-      );
+      entries.push_back(actionEntry(
+          *action, request,
+          radio
+              && *action != Action::FoldersFirst
+              && *action != Action::HiddenLast
+              && *action != Action::ResetFolderView
+      ));
     } else {
       entries.push_back({.label = "", .separator = true});
     }
@@ -779,6 +786,16 @@ void MenuController::showActionMenu(
 }
 
 void MenuController::openSortMenu(std::optional<LayoutRect> anchor, bool alignLeft) {
+  if (m_page.browser().folderView()) {
+    showActionMenu(
+        {Action::SortName, Action::SortType, Action::SortSize, Action::SortModified, Action::SortAccessed,
+         Action::SortCreated, Action::SortOwner, Action::SortGroup, Action::SortPermissions, Action::SortLocation,
+         std::nullopt, Action::Ascending, Action::Descending, std::nullopt, Action::FoldersFirst, Action::HiddenLast,
+         std::nullopt, Action::ResetFolderView},
+        true, !anchor.has_value(), anchor, alignLeft
+    );
+    return;
+  }
   showActionMenu(
       {Action::SortName, Action::SortType, Action::SortSize, Action::SortModified, Action::SortAccessed,
        Action::SortCreated, Action::SortOwner, Action::SortGroup, Action::SortPermissions, Action::SortLocation,
@@ -805,14 +822,20 @@ void MenuController::openMenu() {
       {.id = 9000,
        .label = "New Tab",
        .shortcut = luciole::keybindShortcutOptionalLabel(luciole::KeybindCommand::NewTab)},
-      {.id = 9001,
-       .label = "New Window",
-       .shortcut = luciole::keybindShortcutOptionalLabel(luciole::KeybindCommand::NewWindow)},
+  };
+  if (!m_page.settings().singleWindow) {
+    entries.push_back(
+        {.id = 9001,
+         .label = "New Window",
+         .shortcut = luciole::keybindShortcutOptionalLabel(luciole::KeybindCommand::NewWindow)}
+    );
+  }
+  entries.push_back(
       {.id = 9002,
        .label = "Split View",
-       .shortcut = luciole::keybindShortcutOptionalLabel(luciole::KeybindCommand::SplitView)},
-      {.label = "", .separator = true}
-  };
+       .shortcut = luciole::keybindShortcutOptionalLabel(luciole::KeybindCommand::SplitView)}
+  );
+  entries.push_back({.label = "", .separator = true});
   const auto request = m_page.actionRequest(true);
   entries.push_back(actionEntry(Action::Undo, request));
   entries.push_back(actionEntry(Action::Redo, request));
@@ -820,6 +843,9 @@ void MenuController::openMenu() {
   entries.push_back(actionEntry(Action::Search, request));
   for (const auto action : {Action::Grid, Action::List, Action::Miller}) {
     entries.push_back(actionEntry(action, request, true));
+  }
+  if (m_page.browser().folderView()) {
+    entries.push_back(actionEntry(Action::ResetFolderView, request));
   }
   entries.push_back({.label = "", .separator = true});
   entries.push_back(actionEntry(

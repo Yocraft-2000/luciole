@@ -82,19 +82,27 @@ Folders show custom icons set by other file managers: GNOME Files' (`gio set FOL
 
 The **Change Icon…** button in a local folder's Properties header opens a picker listing the current icon theme with search and a scope dropdown (folders, per-category, unthemed). The chosen name is stored as the folder's `metadata::custom-icon-name` (like GNOME Files) and in its `.directory` file (like Dolphin). Choose **Reset to Default** to restore the standard folder artwork.
 
-List and Columns shorten overflowing filenames in the middle by default, keeping their beginning and ending visible. Settings → Views → Long Filenames also offers Shorten at the End. Changes apply to open panes immediately. Grid keeps its two-line name wrapping.
+All views shorten overflowing filenames in the middle by default, keeping their beginning and ending visible. Settings → Views → Long Filenames also offers Shorten at the End. Changes apply to open panes immediately. Grid wraps names across up to two lines before shortening the overflow.
 
 List headers sort by their column. Drag their dividers to resize columns; Settings → List Columns controls visibility and order. Additional columns include accessed/created time, owner, group, permissions and location. Missing provider metadata stays unavailable rather than becoming a made-up value. Grid view uses the toolbar's Sort menu. By default, shown hidden items sort among visible ones. Hidden Last, in the Sort menu and Settings, sorts them after visible ones; Folders First then applies within each group.
+Folders show their recursive size in the Size column, computed in the background for visible rows; the cell stays blank until its walk finishes and “≥” marks a partial result. Sizes are computed only for folders on local filesystems; network locations keep the cell blank. A size covers the folder's own filesystem; a mount point inside the folder is not traversed and the cell shows the “≥” marker. Cached sizes refresh when the listing reports changes.
 
 The background right-click menu also offers Sort. Changing the sort field, direction, Folders First or Hidden Last shows the beginning of the new order, including in folders that need scrolling. Selected items stay selected. Sort changes made through list headings or Settings follow the same rule.
 
 In large folders, names can appear while detail values are still loading. “Reading…” means a value is pending; “Unknown” means it was unavailable after querying. Hidden extra columns are not queried by ordinary large-folder browsing. Enabling one loads its visible rows. Sorting by metadata or selecting many items can require facts from the rest of the folder; file actions wait for the facts they need.
+Folder sizes do not show “Reading…”; they stay blank until their background walk finishes.
 
-The floating status pill reports actions, search and selection. Settings → Appearance → Always Show Status Bar keeps it visible when idle with the item count and, when available, free space.
+The status bar, a small tab docked to the bottom of the file pane, reports actions, search and selection. Action messages clear after five seconds or at the next action. Settings → Appearance → Always Show Status Bar keeps it visible when idle with the item count and, when available, free space.
 
 Click an entry to select it, Ctrl+click to toggle it and Shift+click to select a range. Clicking empty space clears selection. Drag an area over entries to select several. Ctrl+A selects all visible results, Ctrl+Shift+I inverts selection and Ctrl+S selects by pattern. Escape clears the selection when browsing. Opening uses double-click by default; Settings → General offers single-click opening.
 
 Opening a local file uses the default application for its file type; supported local archives open in Luciole's archive browser instead (see [archives](file-operations.md#archives)). Use Open With to choose another application or change that file type's default.
+
+### Per-folder view and sort
+
+Settings → Views → Remember View and Sort per Folder makes the sort menu, list headings and the Grid/List choice change only the current folder. A folder you never changed keeps following the defaults in Settings, and changing a default there leaves folders with their own settings alone. The folder keeps its sort and view in every tab and window and across restarts. For example, Downloads can sort by Created, newest first, while everything else sorts by name. The sort button's tooltip says "This folder" while the current folder has its own sort.
+
+Use Default View for This Folder, at the end of the Sort menu and below the view choices in the main menu, removes the folder's own settings. Columns is a mode for the whole window: choosing it, or leaving it, changes the default view, and folders' own view choices do not apply while it is on. Sorting a column there still changes only that column's folder. Settings are remembered per location, so a renamed or moved folder starts again from the defaults. File picker windows ignore per-folder settings and keep their own sort and view.
 
 ## Places and folder trees
 
@@ -108,7 +116,7 @@ Pinned folders use the shared GTK bookmark file, also used by Nemo and Nautilus.
 
 Use a bookmark's context menu and choose **Change Icon…** to select a Tabler icon. This icon is stored in Luciole's private state and does not change the shared GTK bookmark or its appearance in other applications. Choose **Reset to Default** to restore the place's standard icon.
 
-Drives starts with File System (`/`), followed by the volumes and mounts GIO reports: removable media, extra partitions and network mounts, but not other system mounts such as `/home` or `/boot`. Mounted drives come before unmounted ones. In the Places list, each mounted drive shows a bar of its used space under its row; the bar turns red at 90% used. Unmounted drives and filesystems that do not report a size have no bar.
+Drives starts with File System (`/`), followed by the volumes and mounts GIO reports: removable media, extra partitions and network mounts, but not other system mounts such as `/home` or `/boot`. Mounted drives come before unmounted ones. In the Places list, each mounted drive shows a bar of its used space under its row; the bar turns red at 90% used. Unmounted drives and filesystems that do not report a size have no bar. Hovering a mounted drive shows its mountpoint and free space. Right-click a mounted drive for Open, its removal action (Unmount, Eject or Safely Remove) when available, and Properties.
 
 To open a LUKS-encrypted drive, click its row under Drives. When the provider needs a passphrase, Luciole opens Unlock Drive. Enter the passphrase and choose Unlock; the mounted folder opens after the provider succeeds. If unlocking fails, Luciole shows the provider's error; click the drive again to retry. Cancel, Escape or dismissing the dialog stops the request. Navigating elsewhere or closing the pane also cancels it. Your current folder stays visible until mounting succeeds.
 
@@ -141,6 +149,8 @@ Ctrl+T, the plus button and explicit New Tab menu actions always switch to the n
 | Toggle split / Switch pane | F3 / F6 |
 
 Enable Restore Tabs from Last Closed Window in Settings → General to reopen the last closed window's tabs once in a new window or on startup without a requested location. The saved session is consumed when restored.
+
+Enable Single Window in Settings → General to keep every location in one window: launching Luciole with a path, or a FileManager1 show-items request from another application, opens tabs in the existing window instead of a new one, launching it without a path raises that window, and New Window opens a tab. File picker windows are unaffected.
 
 ## Miller columns
 

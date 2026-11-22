@@ -26,7 +26,9 @@ namespace luciole {
     bool showPermanentDeletion = false;
     bool switchToNewTab = true;
     bool restoreLastWindow = false;
+    bool singleWindow = false;
     ViewMode viewMode = ViewMode::List;
+    bool rememberFolderViews = false; // Sort and view mode changes apply to the current folder only.
     bool showHidden = false;
     bool showBackups = true;
     bool alwaysShowTabBar = true;
@@ -48,7 +50,14 @@ namespace luciole {
     bool showNetwork = true;
     bool expandableFolders = false;
     bool showPreview = true;
-    bool chooserShowPreview = false; // File picker windows keep their own preview visibility.
+    // File picker windows keep their own preview visibility and layout.
+    bool chooserShowPreview = false;
+    ChooserStartFolder chooserStartFolder = ChooserStartFolder::Home;
+    SortOptions chooserSort;
+    ViewMode chooserViewMode = ViewMode::List;
+    bool chooserShowHidden = false;
+    int chooserGridIconSize = kDefaultGridIconSize;
+    int chooserListIconSize = 0;
     int previewWidth = 320;
     int millerColumnWidth = 260;
     bool millerShowParents = true;
@@ -83,6 +92,7 @@ namespace luciole {
     ShowPermanentDeletion,
     SwitchToNewTab,
     RestoreLastWindow,
+    SingleWindow,
     ShowHidden,
     ShowBackups,
     AlwaysShowTabBar,
@@ -98,6 +108,7 @@ namespace luciole {
     DirectoriesFirst,
     HiddenLast,
     ViewMode,
+    RememberFolderViews,
     GridIconSize,
     ListIconSize,
     MillerIconSize,
@@ -115,6 +126,15 @@ namespace luciole {
     ExpandableFolders,
     ShowPreview,
     ChooserShowPreview,
+    ChooserStartFolder,
+    ChooserSortBy,
+    ChooserSortDescending,
+    ChooserDirectoriesFirst,
+    ChooserHiddenLast,
+    ChooserViewMode,
+    ChooserShowHidden,
+    ChooserGridIconSize,
+    ChooserListIconSize,
     PreviewWidth,
     MillerColumnWidth,
     MillerShowParents,
@@ -173,6 +193,7 @@ namespace luciole {
     static constexpr PreferenceKey<bool> ShowPermanentDeletion{Id::ShowPermanentDeletion};
     static constexpr PreferenceKey<bool> SwitchToNewTab{Id::SwitchToNewTab};
     static constexpr PreferenceKey<bool> RestoreLastWindow{Id::RestoreLastWindow};
+    static constexpr PreferenceKey<bool> SingleWindow{Id::SingleWindow};
     static constexpr PreferenceKey<bool> ShowHidden{Id::ShowHidden};
     static constexpr PreferenceKey<bool> ShowBackups{Id::ShowBackups};
     static constexpr PreferenceKey<bool> AlwaysShowTabBar{Id::AlwaysShowTabBar};
@@ -188,6 +209,7 @@ namespace luciole {
     static constexpr PreferenceKey<bool> DirectoriesFirst{Id::DirectoriesFirst};
     static constexpr PreferenceKey<bool> HiddenLast{Id::HiddenLast};
     static constexpr PreferenceKey<luciole::ViewMode> ViewMode{Id::ViewMode};
+    static constexpr PreferenceKey<bool> RememberFolderViews{Id::RememberFolderViews};
     static constexpr PreferenceKey<int> GridIconSize{Id::GridIconSize};
     static constexpr PreferenceKey<int> ListIconSize{Id::ListIconSize};
     static constexpr PreferenceKey<int> MillerIconSize{Id::MillerIconSize};
@@ -205,6 +227,15 @@ namespace luciole {
     static constexpr PreferenceKey<bool> ExpandableFolders{Id::ExpandableFolders};
     static constexpr PreferenceKey<bool> ShowPreview{Id::ShowPreview};
     static constexpr PreferenceKey<bool> ChooserShowPreview{Id::ChooserShowPreview};
+    static constexpr PreferenceKey<luciole::ChooserStartFolder> ChooserStartFolder{Id::ChooserStartFolder};
+    static constexpr PreferenceKey<luciole::SortField> ChooserSortBy{Id::ChooserSortBy};
+    static constexpr PreferenceKey<bool> ChooserSortDescending{Id::ChooserSortDescending};
+    static constexpr PreferenceKey<bool> ChooserDirectoriesFirst{Id::ChooserDirectoriesFirst};
+    static constexpr PreferenceKey<bool> ChooserHiddenLast{Id::ChooserHiddenLast};
+    static constexpr PreferenceKey<luciole::ViewMode> ChooserViewMode{Id::ChooserViewMode};
+    static constexpr PreferenceKey<bool> ChooserShowHidden{Id::ChooserShowHidden};
+    static constexpr PreferenceKey<int> ChooserGridIconSize{Id::ChooserGridIconSize};
+    static constexpr PreferenceKey<int> ChooserListIconSize{Id::ChooserListIconSize};
     static constexpr PreferenceKey<int> PreviewWidth{Id::PreviewWidth};
     static constexpr PreferenceKey<int> MillerColumnWidth{Id::MillerColumnWidth};
     static constexpr PreferenceKey<bool> MillerShowParents{Id::MillerShowParents};
@@ -257,9 +288,15 @@ namespace luciole {
     BrowserPreferenceId m_preference;
     std::variant<
         std::monostate, bool, int, double, SortField, ViewMode, ViewDensity, FilenameTruncation, DetailsColumnOrder,
-        ActivationMode, TypingMode, DropAction, ThumbnailPolicy, std::string, KeybindConfig>
+        ActivationMode, TypingMode, DropAction, ThumbnailPolicy, ChooserStartFolder, std::string, KeybindConfig>
         m_value;
   };
+
+  // The TOML spelling of sort fields and view modes, shared by settings.toml and the folder view state.
+  std::string_view sortFieldName(SortField field);
+  std::optional<SortField> sortFieldFromName(std::string_view name);
+  std::string_view viewModeName(ViewMode mode);
+  std::optional<ViewMode> viewModeFromName(std::string_view name);
 
   // Edits that remove every override.
   std::vector<OverrideEdit> inheritAllPreferences();

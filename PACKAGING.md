@@ -50,7 +50,7 @@ DESTDIR="$PWD/pkgroot" meson install --no-rebuild -C build-package
 | --- | --- | --- |
 | `tests` | `auto` | Auto enables tests for unsanitized debug builds; use `enabled` for check builds. |
 | `native_optimizations` | `false` | Keep false for portable packages; true enables CPU-local code generation. |
-| `build_revision` | `unknown` | Optional explicit revision metadata supplied by the packager. |
+| `build_revision` | `unknown` | Revision shown by `--version` and the About page. `unknown` derives it from `git describe` when building from a Git checkout; set it explicitly for archive builds. |
 | `benchmarks` | `false` | Leave disabled for ordinary packages. |
 
 Standard Meson prefix, directory, LTO and sanitizer options apply. GNU LTO needs compiler-aware archive tools such as `gcc-ar` and `gcc-ranlib`. Use a fresh build directory when changing toolchains.
@@ -176,6 +176,8 @@ The portal file has no `UseIn` key. Session integration must select it in `porta
 [preferred]
 org.freedesktop.impl.portal.FileChooser=luciole;gtk
 ```
+
+Keep the session's other portal preferences when adding this entry; configuration files are selected as a whole rather than merged. End-user setup for distribution packages and NixOS is in the [installation guide](docs/user/installation.md#use-luciole-as-the-file-picker).
 
 Selection requires xdg-desktop-portal. The frontend discovers portal files at startup, so restart it after installing/removing the backend. A listed absent backend permits fallback; an installed backend that fails does not.
 

@@ -74,7 +74,6 @@ subdir('lib')
 
 build_config = configuration_data()
 build_config.set_quoted('LUCIOLE_VERSION', meson.project_version())
-build_config.set_quoted('LUCIOLE_BUILD_REVISION', get_option('build_revision'))
 build_config.set_quoted('LUCIOLE_BUILD_TYPE', get_option('buildtype'))
 build_config.set_quoted('LUCIOLE_COMPILER', cpp.get_id() + ' ' + cpp.version())
 build_config.set_quoted('LUCIOLE_INSTALL_ASSETSDIR', get_option('prefix') / get_option('datadir') / 'luciole/assets')
@@ -83,6 +82,23 @@ build_info = configure_file(
   output: 'luciole_build_info.h',
   configuration: build_config,
 )
+# An explicit packager revision wins; otherwise git describes the checkout at build time.
+# Only cli.cpp and about_controller.cpp include this header, so a new commit rebuilds just them.
+git = find_program('git', required: false)
+if get_option('build_revision') == 'unknown' and git.found()
+  build_revision = vcs_tag(
+    input: 'src/app/build_revision.h.in',
+    output: 'luciole_build_revision.h',
+    command: [git, 'describe', '--tags', '--always', '--dirty=-dirty', '--abbrev=12'],
+    fallback: 'unknown',
+  )
+else
+  build_revision = configure_file(
+    input: 'src/app/build_revision.h.in',
+    output: 'luciole_build_revision.h',
+    configuration: {'VCS_TAG': get_option('build_revision')},
+  )
+endif
 fs = import('fs')
 completion_config = configuration_data()
 completion_config.set('BASH_COMPLETIONS', fs.read('assets/completions/luciole.bash'))
@@ -165,6 +181,7 @@ fs_dep = declare_dependency(link_with: fs_lib, include_directories: src_inc, dep
 config_lib = static_library('luciole-config',
   files(
     'src/config/diagnostic.cpp',
+    'src/config/folder_view_store.cpp',
     'src/config/settings.cpp',
     'src/config/shared_bookmarks.cpp',
     'src/config/state_store.cpp',
@@ -187,6 +204,7 @@ browser_lib = static_library('luciole-browser',
     'src/browser/directory_model.cpp',
     'src/browser/directory_tree.cpp',
     'src/browser/entry_details.cpp',
+    'src/browser/folder_views.cpp',
     'src/browser/selection_details.cpp',
     'src/browser/job_routing.cpp',
     'src/browser/location_presentation.cpp',
@@ -410,6 +428,7 @@ app = executable('luciole',
     'src/app/page/drag_drop_controller.cpp',
     'src/app/page/file_keyboard_controller.cpp',
     'src/app/page/folder_icon_controller.cpp',
+    'src/app/page/folder_view_controller.cpp',
     'src/app/page/location_bar_controller.cpp',
     'src/app/page/menu_controller.cpp',
     'src/app/page/mount_controller.cpp',
@@ -431,6 +450,7 @@ app = executable('luciole',
     'src/main.cpp',
   ),
   build_info,
+  build_revision,
   completions,
   app_icon,
   include_directories: include_directories('src', '.'),

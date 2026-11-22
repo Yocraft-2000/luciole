@@ -11,6 +11,8 @@ namespace luciole {
   class SidebarTreeView;
   // The action name for removing a drive this way: "Safely Remove", "Eject" or "Unmount"; empty for None.
   std::string_view driveRemovalLabel(DriveRemoval removal);
+  // "X free of Y (Z% used)" for a drive's usage; `usage.size` must be nonzero.
+  std::string driveSpaceText(const DriveUsage& usage);
 
   class PlacesSidebar final : public Flex {
   public:
