@@ -312,7 +312,7 @@ void TransferController::moveIntoNewFolder(
       std::move(payload), std::move(options), std::move(finish), m_page.browser().contextSerial()
   );
   auto editor = std::make_unique<NameDialog>(
-      m_page.dialogWidth(DialogWidth::Small), "New folder", "folder-plus", "New Folder", "", luciole::filenameProblem,
+      m_page.dialogWidth(DialogWidth::Small), "New Folder", "folder-plus", "New Folder", "", luciole::filenameProblem,
       [this](std::string name) { submitNewFolder(std::move(name)); }, [this] { m_page.dismissPopup(); }, "Create",
       "Creating…"
   );
@@ -562,7 +562,7 @@ void TransferController::chooseDrop(
                   })}
   );
   entries.push_back({.id = kDropExtract, .label = "Extract Here", .enabled = canExtract});
-  entries.push_back({.id = kDropNewFolder, .label = "Move into New Folder", .enabled = canNewFolder});
+  entries.push_back({.id = kDropNewFolder, .label = "Move into New Folder…", .enabled = canNewFolder});
   entries.push_back({.label = "", .separator = true});
   entries.push_back({.id = kDropCancel, .label = "Cancel", .shortcut = "Esc"});
   m_page.showContextMenu(std::move(entries), choose, {pending->options.x, pending->options.y, 1.0F, 1.0F});
