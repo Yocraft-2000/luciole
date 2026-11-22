@@ -60,7 +60,7 @@ namespace {
   // Appends a separator unless `entries` is empty or already ends with one.
   void addSeparator(std::vector<ContextMenuControlEntry>& entries) {
     if (!entries.empty() && !entries.back().separator) {
-      entries.push_back({.label = "", .separator = true});
+      entries.push_back({.label = "", .separator = true, .glyph = {}});
     }
   }
 } // namespace
@@ -395,7 +395,7 @@ void MenuController::openPlaceMenu(const luciole::Bookmark& bookmark, float x, f
     return std::nullopt;
   };
   {
-    entries.push_back({.label = "", .separator = true});
+    entries.push_back({.label = "", .separator = true, .glyph = {}});
     if (!bookmark.location.isTrash() && bookmark.location != luciole::Location::network()) {
       entries.push_back({.id = 2, .label = "Unpin", .enabled = m_pins.editable(), .glyph = "pinned-off"});
       entries.push_back({.id = 6, .label = "Rename Place…", .enabled = m_pins.editable(), .glyph = "pencil"});
@@ -411,10 +411,10 @@ void MenuController::openPlaceMenu(const luciole::Bookmark& bookmark, float x, f
          .glyph = "arrow-down"}
     );
   }
-  entries.push_back({.label = "", .separator = true});
+  entries.push_back({.label = "", .separator = true, .glyph = {}});
   if (bookmark.location == luciole::Location::trash()) {
     entries.push_back({.id = 7, .label = "Empty Trash…", .enabled = false, .glyph = "trash-x", .destructive = true});
-    entries.push_back({.label = "", .separator = true});
+    entries.push_back({.label = "", .separator = true, .glyph = {}});
   }
   if (bookmark.location == luciole::Location::network()) {
     entries.push_back({.id = 9, .label = "Hide Network", .glyph = "eye-off"});
@@ -488,7 +488,7 @@ void MenuController::openBreadcrumbMenu(const luciole::Location& target, LayoutR
     targets->push_back(crumb.location);
     entries.push_back({.id = static_cast<int>(index), .label = crumb.label, .glyph = "folder"});
   }
-  entries.push_back({.label = "", .separator = true});
+  entries.push_back({.label = "", .separator = true, .glyph = {}});
   const auto request = m_page.actionRequest(false);
   for (const auto action : {Action::CopyPath, Action::CopyUri, Action::Terminal}) {
     auto entry = actionEntry(action, request);
@@ -498,9 +498,9 @@ void MenuController::openBreadcrumbMenu(const luciole::Location& target, LayoutR
     }
     entries.push_back(std::move(entry));
   }
-  entries.push_back({.label = "", .separator = true});
-  entries.push_back({.label = "Sibling Folders", .header = true});
-  entries.push_back({.label = "Loading folders…", .enabled = false});
+  entries.push_back({.label = "", .separator = true, .glyph = {}});
+  entries.push_back({.label = "Sibling Folders", .header = true, .glyph = {}});
+  entries.push_back({.label = "Loading folders…", .enabled = false, .glyph = {}});
   const auto activate = [this, context, target, targets](int id) {
     if (context != m_page.browser().contextSerial()) {
       return;
@@ -550,11 +550,13 @@ void MenuController::openBreadcrumbMenu(const luciole::Location& target, LayoutR
         }
         if (suggestions.items.empty()) {
           entries.push_back(
-              {.label = suggestions.error.empty() ? "No sibling folders" : "Folders unavailable", .enabled = false}
+              {.label = suggestions.error.empty() ? "No sibling folders" : "Folders unavailable",
+               .enabled = false,
+               .glyph = {}}
           );
         }
         if (suggestions.truncated) {
-          entries.push_back({.label = "First 256 folders; open parent for all", .enabled = false});
+          entries.push_back({.label = "First 256 folders; open parent for all", .enabled = false, .glyph = {}});
         }
         showContextMenu(std::move(entries), activate, anchor);
       }
@@ -684,7 +686,7 @@ void MenuController::openColumnsMenu(const LayoutRect& anchor, std::optional<luc
          .glyph = "columns"}
     );
   }
-  entries.push_back({.label = "", .separator = true});
+  entries.push_back({.label = "", .separator = true, .glyph = {}});
   entries.push_back(
       {.id = 100,
        .label = "Show All Columns",
@@ -699,7 +701,7 @@ void MenuController::openColumnsMenu(const LayoutRect& anchor, std::optional<luc
   );
   const int left = Style::rtl() ? 1 : -1;
   if (column) {
-    entries.push_back({.label = "", .separator = true});
+    entries.push_back({.label = "", .separator = true, .glyph = {}});
     entries.push_back(
         {.id = 101,
          .label = "Move Left",
@@ -713,7 +715,7 @@ void MenuController::openColumnsMenu(const LayoutRect& anchor, std::optional<luc
          .glyph = "arrow-right"}
     );
   }
-  entries.push_back({.label = "", .separator = true});
+  entries.push_back({.label = "", .separator = true, .glyph = {}});
   entries.push_back(
       {.id = 103,
        .label = "Reset Column Order",
@@ -772,7 +774,7 @@ void MenuController::showActionMenu(
   std::vector<ContextMenuControlEntry> entries;
   if (back) {
     entries.push_back(actionEntry(Action::MenuBack, request));
-    entries.push_back({.label = "", .separator = true});
+    entries.push_back({.label = "", .separator = true, .glyph = {}});
   }
   for (const auto action : actions) {
     if (action) {
@@ -780,7 +782,7 @@ void MenuController::showActionMenu(
           actionEntry(*action, request, radio && *action != Action::FoldersFirst && *action != Action::HiddenLast)
       );
     } else {
-      entries.push_back({.label = "", .separator = true});
+      entries.push_back({.label = "", .separator = true, .glyph = {}});
     }
   }
   showContextMenu(
@@ -831,7 +833,7 @@ void MenuController::openMenu() {
     entries.push_back({.id = 9001, .label = "New Window", .glyph = "device-desktop", .shortcut = "Ctrl+N"});
   }
   entries.push_back({.id = 9002, .label = "Split View", .glyph = "columns", .shortcut = "F3"});
-  entries.push_back({.label = "", .separator = true});
+  entries.push_back({.label = "", .separator = true, .glyph = {}});
   const auto request = m_page.actionRequest(true);
   entries.push_back(actionEntry(Action::Undo, request));
   entries.push_back(actionEntry(Action::Redo, request));
@@ -840,7 +842,7 @@ void MenuController::openMenu() {
   for (const auto action : {Action::Grid, Action::List, Action::Miller}) {
     entries.push_back(actionEntry(action, request, true));
   }
-  entries.push_back({.label = "", .separator = true});
+  entries.push_back({.label = "", .separator = true, .glyph = {}});
   entries.push_back(actionEntry(
       m_page.browser().model().snapshot().status == luciole::DirectoryStatus::Loading ? Action::Stop : Action::Refresh,
       request
@@ -849,7 +851,7 @@ void MenuController::openMenu() {
        {Action::SortMenu, Action::SelectionMenu, Action::ShowHidden, Action::ShowSidebar, Action::ShowPreview}) {
     entries.push_back(actionEntry(action, request));
   }
-  entries.push_back({.label = "", .separator = true});
+  entries.push_back({.label = "", .separator = true, .glyph = {}});
   entries.push_back(actionEntry(Action::Operations, request));
   entries.push_back(actionEntry(Action::Settings, request));
   entries.push_back(actionEntry(Action::KeyboardShortcuts, request));

@@ -481,16 +481,17 @@ void LocationBarController::layoutCompletions(Renderer& renderer) {
     constexpr std::size_t pageSize = 6;
     const auto page = m_completionIndex.value_or(0) / pageSize * pageSize;
     for (auto i = page; i < std::min(page + pageSize, m_completionItems.items.size()); ++i) {
-      entries.push_back({.id = static_cast<int>(i), .label = m_completionItems.items[i].label});
+      entries.push_back({.id = static_cast<int>(i), .label = m_completionItems.items[i].label, .glyph = {}});
     }
     if (m_completionItems.items.size() > pageSize || m_completionItems.truncated) {
       entries.push_back(
           {.label = m_completionItems.truncated ? "More matches; type to narrow" : "Arrow keys for more matches",
-           .enabled = false}
+           .enabled = false,
+           .glyph = {}}
       );
     }
     if (!m_completionItems.error.empty() && entries.empty()) {
-      entries.push_back({.label = "Folder suggestions unavailable", .enabled = false});
+      entries.push_back({.label = "Folder suggestions unavailable", .enabled = false, .glyph = {}});
     }
     const bool visible = m_editingLocation && !entries.empty() && m_page.popupSurface() == nullptr;
     m_completionFrame->setVisible(visible);

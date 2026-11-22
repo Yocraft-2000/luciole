@@ -1447,7 +1447,7 @@ void WorkspaceApplication::tabMenu(Host& host, luciole::TabId tab, float x, floa
       {.id = 1, .label = "Duplicate Tab", .glyph = "copy", .shortcut = "Ctrl+Shift+D"},
       {.id = 2, .label = "Close Tab", .glyph = "x", .shortcut = "Ctrl+W"},
       {.id = 3, .label = "Reopen Closed Tab", .glyph = "history", .shortcut = "Ctrl+Shift+T"},
-      {.label = "", .separator = true},
+      {.label = "", .separator = true, .glyph = {}},
       {.id = 4, .label = "Split View", .glyph = "columns", .shortcut = "F3"},
       {.id = 5, .label = "Swap Panes", .glyph = "arrows-cross"},
   };

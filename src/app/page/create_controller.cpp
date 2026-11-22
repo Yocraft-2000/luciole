@@ -53,7 +53,7 @@ void CreateController::showDocumentMenu(
        .label = std::string(emptyFile.label),
        .glyph = std::string(emptyFile.glyph),
        .shortcut = std::string(emptyFile.shortcut)},
-      {.label = "", .separator = true}
+      {.label = "", .separator = true, .glyph = {}}
   };
   for (std::size_t index = 0; index < items->size(); ++index) {
     entries.push_back({.id = static_cast<int>(index), .label = (*items)[index].label, .glyph = "template"});
@@ -63,11 +63,12 @@ void CreateController::showDocumentMenu(
         {.label = loading    ? "Loading templates…"
              : listing.error ? luciole::fileErrorText(*listing.error)
                              : "No document templates",
-         .enabled = false}
+         .enabled = false,
+         .glyph = {}}
     );
   }
   if (listing.truncated) {
-    entries.push_back({.label = "Template list limit reached", .enabled = false});
+    entries.push_back({.label = "Template list limit reached", .enabled = false, .glyph = {}});
   }
   m_submenus.show(
       std::move(entries),
