@@ -41,44 +41,6 @@ namespace {
     return value;
   }
 
-  std::string canonicalKeyName(std::string raw) {
-    const std::string lower = asciiLower(raw);
-    if (lower == "esc") {
-      return "Escape";
-    }
-    if (lower == "del") {
-      return "Delete";
-    }
-    if (lower == "enter") {
-      return "Return";
-    }
-    if (lower == "kp_enter") {
-      return "KP_Enter";
-    }
-    if (lower == "space" || lower == "spacebar") {
-      return "space";
-    }
-    if (lower == "left") {
-      return "Left";
-    }
-    if (lower == "right") {
-      return "Right";
-    }
-    if (lower == "up") {
-      return "Up";
-    }
-    if (lower == "down") {
-      return "Down";
-    }
-    if (lower == "tab") {
-      return "Tab";
-    }
-    if (lower == "iso_left_tab" || lower == "shift_tab") {
-      return "ISO_Left_Tab";
-    }
-    return raw;
-  }
-
   std::string keysymName(std::uint32_t sym) {
     if (sym == 0) {
       return {};
@@ -126,22 +88,19 @@ namespace {
     std::uint32_t modifiers = 0;
     for (std::size_t index = 0; index + 1 < tokens.size(); ++index) {
       const std::string mod = asciiLower(tokens[index]);
-      if (mod == "ctrl" || mod == "control" || mod == "ctl") {
+      if (mod == "ctrl") {
         modifiers |= KeybindMod::Ctrl;
       } else if (mod == "shift") {
         modifiers |= KeybindMod::Shift;
-      } else if (mod == "alt" || mod == "option") {
+      } else if (mod == "alt") {
         modifiers |= KeybindMod::Alt;
-      } else if (mod == "super" || mod == "meta" || mod == "logo" || mod == "win" || mod == "mod4") {
-        // Compositors own Super shortcuts.
-        return std::nullopt;
       } else {
+        // Super belongs to the compositor; anything else is not a modifier.
         return std::nullopt;
       }
     }
 
-    const std::string keyName = canonicalKeyName(tokens.back());
-    const xkb_keysym_t sym = xkb_keysym_from_name(keyName.c_str(), XKB_KEYSYM_CASE_INSENSITIVE);
+    const xkb_keysym_t sym = xkb_keysym_from_name(tokens.back().c_str(), XKB_KEYSYM_CASE_INSENSITIVE);
     if (sym == XKB_KEY_NoSymbol || sym == XKB_KEY_Super_L || sym == XKB_KEY_Super_R) {
       return std::nullopt;
     }
