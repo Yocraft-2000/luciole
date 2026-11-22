@@ -182,6 +182,7 @@ config_lib = static_library('luciole-config',
   files(
     'src/config/diagnostic.cpp',
     'src/config/folder_view_store.cpp',
+    'src/config/keybinds.cpp',
     'src/config/settings.cpp',
     'src/config/shared_bookmarks.cpp',
     'src/config/state_store.cpp',
