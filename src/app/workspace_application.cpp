@@ -73,7 +73,6 @@ WorkspaceApplication::WorkspaceApplication(
     if (m_preferences.settings()) {
       m_defaults = m_preferences.settings()->browser;
       luciole::setActiveKeybinds(m_defaults.keybinds);
-      luciole::installControlKeybindMatchers();
       // Strip tooltips embed shortcut labels; clear the cache so rebuildStrip regenerates them.
       for (auto& [id, host] : m_hosts) {
         (void)id;

@@ -202,7 +202,4 @@ namespace luciole {
   // Writes one slot and keeps the chord list packed. A nullopt or zero-sym chord removes the slot.
   void
   setKeybindChord(KeybindConfig& config, KeybindCommand command, std::size_t slot, std::optional<KeybindChord> chord);
-
-  // Binds the shared control actions to the active keybinds.
-  void installControlKeybindMatchers();
 } // namespace luciole

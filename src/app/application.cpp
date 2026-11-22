@@ -76,24 +76,28 @@ namespace {
     return true;
   }
 
-} // namespace
-
-void luciole::installControlKeybindMatchers() {
-  using K = luciole::KeybindCommand;
-  const auto bind = [](KeybindAction action, K command) {
-    KeybindMatcher::setMatcher(action, [command](std::uint32_t sym, std::uint32_t modifiers) {
-      return luciole::keybindMatches(command, sym, modifiers);
+  // Binds lib controls to the active keybinds, read on every key.
+  void installKeybindMatchers() {
+    using K = luciole::KeybindCommand;
+    const auto bind = [](KeybindAction action, K command) {
+      KeybindMatcher::setMatcher(action, [command](std::uint32_t sym, std::uint32_t modifiers) {
+        return luciole::keybindMatches(command, sym, modifiers);
+      });
+    };
+    bind(KeybindAction::Validate, K::Validate);
+    bind(KeybindAction::Cancel, K::Cancel);
+    bind(KeybindAction::Left, K::MoveLeft);
+    bind(KeybindAction::Right, K::MoveRight);
+    bind(KeybindAction::Up, K::MoveUp);
+    bind(KeybindAction::Down, K::MoveDown);
+    bind(KeybindAction::TabNext, K::FocusNext);
+    bind(KeybindAction::TabPrevious, K::FocusPrevious);
+    Input::setValidateKeyMatcher([](std::uint32_t sym, std::uint32_t modifiers) {
+      return luciole::keybindMatches(luciole::KeybindCommand::Validate, sym, modifiers);
     });
-  };
-  bind(KeybindAction::Validate, K::Validate);
-  bind(KeybindAction::Cancel, K::Cancel);
-  bind(KeybindAction::Left, K::MoveLeft);
-  bind(KeybindAction::Right, K::MoveRight);
-  bind(KeybindAction::Up, K::MoveUp);
-  bind(KeybindAction::Down, K::MoveDown);
-  bind(KeybindAction::TabNext, K::FocusNext);
-  bind(KeybindAction::TabPrevious, K::FocusPrevious);
-}
+  }
+
+} // namespace
 
 int luciole::runApplication(const std::optional<std::string>& initialLocation, StartupMode mode) {
   startupTrace("main");
@@ -135,10 +139,7 @@ int luciole::runApplication(const std::optional<std::string>& initialLocation, S
       throw std::runtime_error(config.issues().front().format());
     }
     luciole::setActiveKeybinds(config.settings().browser.keybinds);
-    luciole::installControlKeybindMatchers();
-    Input::setValidateKeyMatcher([](std::uint32_t sym, std::uint32_t modifiers) {
-      return luciole::keybindMatches(luciole::KeybindCommand::Validate, sym, modifiers);
-    });
+    installKeybindMatchers();
     luciole::initializeLibrary();
     Style::setCornerRadiusScale(static_cast<float>(config.settings().browser.cornerRadiusScale));
     Style::setCloseButtonsEnabled(config.settings().browser.showCloseButtons);
