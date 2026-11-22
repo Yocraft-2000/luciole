@@ -90,7 +90,7 @@ The background right-click menu also offers Sort. Changing the sort field, direc
 
 In large folders, names can appear while detail values are still loading. “Reading…” means a value is pending; “Unknown” means it was unavailable after querying. Hidden extra columns are not queried by ordinary large-folder browsing. Enabling one loads its visible rows. Sorting by metadata or selecting many items can require facts from the rest of the folder; file actions wait for the facts they need.
 
-The floating status pill reports actions, search and selection. Settings → Appearance → Always Show Status Bar keeps it visible when idle with the item count and, when available, free space.
+The status bar, a small tab docked to the bottom of the file pane, reports actions, search and selection. Action messages clear after five seconds or at the next action. Settings → Appearance → Always Show Status Bar keeps it visible when idle with the item count and, when available, free space.
 
 Click an entry to select it, Ctrl+click to toggle it and Shift+click to select a range. Clicking empty space clears selection. Drag an area over entries to select several. Ctrl+A selects all visible results, Ctrl+Shift+I inverts selection and Ctrl+S selects by pattern. Escape clears the selection when browsing. Opening uses double-click by default; Settings → General offers single-click opening.
 
@@ -108,7 +108,7 @@ Pinned folders use the shared GTK bookmark file, also used by Nemo and Nautilus.
 
 Use a bookmark's context menu and choose **Change Icon…** to select a Tabler icon. This icon is stored in Luciole's private state and does not change the shared GTK bookmark or its appearance in other applications. Choose **Reset to Default** to restore the place's standard icon.
 
-Drives starts with File System (`/`), followed by the volumes and mounts GIO reports: removable media, extra partitions and network mounts, but not other system mounts such as `/home` or `/boot`. Mounted drives come before unmounted ones. In the Places list, each mounted drive shows a bar of its used space under its row; the bar turns red at 90% used. Unmounted drives and filesystems that do not report a size have no bar.
+Drives starts with File System (`/`), followed by the volumes and mounts GIO reports: removable media, extra partitions and network mounts, but not other system mounts such as `/home` or `/boot`. Mounted drives come before unmounted ones. In the Places list, each mounted drive shows a bar of its used space under its row; the bar turns red at 90% used. Unmounted drives and filesystems that do not report a size have no bar. Hovering a mounted drive shows its mountpoint and free space. Right-click a mounted drive for Open, its removal action (Unmount, Eject or Safely Remove) when available, and Properties.
 
 To open a LUKS-encrypted drive, click its row under Drives. When the provider needs a passphrase, Luciole opens Unlock Drive. Enter the passphrase and choose Unlock; the mounted folder opens after the provider succeeds. If unlocking fails, Luciole shows the provider's error; click the drive again to retry. Cancel, Escape or dismissing the dialog stops the request. Navigating elsewhere or closing the pane also cancels it. Your current folder stays visible until mounting succeeds.
 
@@ -141,6 +141,8 @@ Ctrl+T, the plus button and explicit New Tab menu actions always switch to the n
 | Toggle split / Switch pane | F3 / F6 |
 
 Enable Restore Tabs from Last Closed Window in Settings → General to reopen the last closed window's tabs once in a new window or on startup without a requested location. The saved session is consumed when restored.
+
+Enable Single Window in Settings → General to keep every location in one window: launching Luciole with a path, or a FileManager1 show-items request from another application, opens tabs in the existing window instead of a new one, launching it without a path raises that window, and New Window opens a tab. File picker windows are unaffected.
 
 ## Miller columns
 

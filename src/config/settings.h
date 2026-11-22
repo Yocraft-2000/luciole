@@ -25,6 +25,7 @@ namespace luciole {
     bool showPermanentDeletion = false;
     bool switchToNewTab = true;
     bool restoreLastWindow = false;
+    bool singleWindow = false;
     ViewMode viewMode = ViewMode::List;
     bool showHidden = false;
     bool showBackups = true;
@@ -89,6 +90,7 @@ namespace luciole {
     ShowPermanentDeletion,
     SwitchToNewTab,
     RestoreLastWindow,
+    SingleWindow,
     ShowHidden,
     ShowBackups,
     AlwaysShowTabBar,
@@ -188,6 +190,7 @@ namespace luciole {
     static constexpr PreferenceKey<bool> ShowPermanentDeletion{Id::ShowPermanentDeletion};
     static constexpr PreferenceKey<bool> SwitchToNewTab{Id::SwitchToNewTab};
     static constexpr PreferenceKey<bool> RestoreLastWindow{Id::RestoreLastWindow};
+    static constexpr PreferenceKey<bool> SingleWindow{Id::SingleWindow};
     static constexpr PreferenceKey<bool> ShowHidden{Id::ShowHidden};
     static constexpr PreferenceKey<bool> ShowBackups{Id::ShowBackups};
     static constexpr PreferenceKey<bool> AlwaysShowTabBar{Id::AlwaysShowTabBar};

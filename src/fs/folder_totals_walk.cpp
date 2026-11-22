@@ -118,6 +118,18 @@ namespace {
       if (stopped()) {
         return;
       }
+      // Another filesystem mounted inside the tree (a drive, a phone, a container layer): count the
+      // mountpoint, never descend. Like du -x, so a stray mount can't blow up the total. This returns
+      // before the selected-roots bookkeeping below, so an explicitly selected nested mount is still
+      // fully walked when its own depth-0 root is processed.
+      if (depth != 0 && S_ISDIR(value.st_mode) && value.st_dev != m_rootDev) {
+        ++m_items;
+        ++m_result.folders;
+        if (m_items % 64 == 0) {
+          m_progress(m_result);
+        }
+        return;
+      }
       if (const auto found = m_selected.find(location.uri()); found != m_selected.end()) {
         if (!m_seenRoots.insert(location.uri()).second) {
           return;
@@ -126,6 +138,9 @@ namespace {
       }
       ++m_items;
       if (S_ISDIR(value.st_mode)) {
+        if (depth == 0) {
+          m_rootDev = value.st_dev;
+        }
         if (!m_directories.emplace(value.st_dev, value.st_ino).second) {
           ++m_result.unavailable; // Directory alias/cycle: no duplicate subtree totals.
         } else {
@@ -209,6 +224,7 @@ namespace {
     luciole::FolderTotalsLimits m_limits;
     luciole::FolderTotalsSnapshot m_result;
     std::size_t m_items = 0;
+    dev_t m_rootDev = 0;
     std::map<std::string, const luciole::DirectoryEntry*> m_selected;
     std::set<std::string> m_seenRoots;
     std::set<std::pair<dev_t, ino_t>> m_directories;

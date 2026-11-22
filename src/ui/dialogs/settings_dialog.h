@@ -36,7 +36,7 @@ private:
       luciole::PreferenceKey<T> key, const std::string& title, const Choices<T>& choices, std::string subtitle = {}
   );
   void addTerminal();
-  void addBool(luciole::PreferenceKey<bool> key, const std::string& title);
+  void addBool(luciole::PreferenceKey<bool> key, const std::string& title, std::string subtitle = {});
   void addNumber(
       luciole::PreferenceKey<int> key, const std::string& title, const std::vector<int>& values,
       std::string suffix = "px"

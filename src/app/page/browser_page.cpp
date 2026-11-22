@@ -2521,6 +2521,8 @@ void BrowserPage::layoutFrame(Renderer& renderer) {
   m_root->arrange(
       renderer, LayoutRect{0, 0, static_cast<float>(m_surface->width()), static_cast<float>(m_surface->height())}
   );
+  // A translucent overlay (background_opacity below 1) would otherwise show the panes through it.
+  m_body->setVisible(!overlay());
   m_body->arrange(renderer, m_pageBounds);
   m_archiveController.layout(renderer, m_pageBounds);
   if (m_detailsHeader.layoutColumns(m_miller.enabled())) {

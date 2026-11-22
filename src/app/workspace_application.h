@@ -100,6 +100,8 @@ private:
   void clearExternalDrops();
   static void dispatch(InputDispatcher& dispatcher, const PointerEvent& event);
   luciole::WindowId newWindow(std::unique_ptr<FileChooserSession> chooser = nullptr);
+  // The window external opens reuse in single-window mode: the focused one, else the first live browser window.
+  luciole::WindowId browsingWindow() const;
   luciole::TabId newTab(
       luciole::WindowId window, std::optional<luciole::Location> location, luciole::TabId duplicate = 0,
       bool activate = true

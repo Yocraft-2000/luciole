@@ -34,6 +34,7 @@ drop_action = "menu"
 switch_to_new_tab = true
 confirm_permanent_deletion = true
 restore_last_window = false
+single_window = false
 compact_menus = true
 context_menu_icons = true
 show_close_buttons = true
@@ -77,7 +78,7 @@ All keys below belong in `[browser]`. Dimensions are logical pixels unless state
 | `show_hidden` | `false` | Hidden entries |
 | `show_backups` | `true` | Non-directory backup names ending in `~` |
 | `always_show_tab_bar` | `true` | Keep the tab bar visible when a window has only one tab |
-| `always_show_status_bar` | `false` | Keep the status pill visible when idle, showing the item count and free space |
+| `always_show_status_bar` | `false` | Keep the status bar visible when idle, showing the item count and free space |
 | `compact_menus` | `true` | Reduce the row height and padding in context menus without shrinking their text |
 | `context_menu_icons` | `true` | Show action glyphs at the start of context menu rows. Disabling removes the whole icon column; labels, checkmarks, shortcuts and submenu arrows stay in place |
 | `show_close_buttons` | `true` | Show the glyph close buttons on tabs, dialogs, panes, the preview and archives. Disable to hide them live; the window controls, Escape and Close/Cancel actions still close things |
@@ -93,6 +94,7 @@ All keys below belong in `[browser]`. Dimensions are logical pixels unless state
 | `show_permanent_deletion` | `false` | Show Delete Permanently in context menus for items outside Trash; Shift+Delete and Trash actions stay available either way |
 | `switch_to_new_tab` | `true` | Switch when opening a folder in a new tab; disable to keep browsing the current tab |
 | `restore_last_window` | `false` | Reopen tabs from the last closed window once in a new window, or at startup without a requested location |
+| `single_window` | `false` | Keep one window: launches with a path and FileManager1 show-items requests open tabs in the existing window instead of a new one, launches without a path raise it, New Window opens a tab, and tab-moving entries disappear from menus |
 | `terminal_command` | `""` | Terminal command and optional arguments, for example `"foot"`; empty uses `$TERMINAL`, then automatic discovery |
 | `sort_by` | `"name"` | `"name"`, `"type"`, `"size"`, `"modified"`, `"accessed"`, `"created"`, `"owner"`, `"group"`, `"permissions"`, `"location"` |
 | `sort_descending` | `false` | Reverse sort direction |

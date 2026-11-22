@@ -222,7 +222,15 @@ void WorkspaceApplication::start(std::optional<luciole::Location> initial) {
 }
 
 void WorkspaceApplication::open(const luciole::InstanceRequest& request) {
-  const auto window = newWindow();
+  const auto existing = m_defaults.singleWindow ? browsingWindow() : luciole::WindowId{0};
+  if (existing && request.locations.empty()) {
+    // A bare launch only raises the window.
+    auto& host = *m_hosts.at(existing);
+    select(existing, m_model.windows().at(existing).selected);
+    m_connection.extension<luciole::DesktopIntegration>().activate(request.activationToken, host.surface.wlSurface());
+    return;
+  }
+  const auto window = existing ? existing : newWindow();
   if (!window) {
     throw std::runtime_error("Cannot create a Luciole window.");
   }
@@ -243,8 +251,12 @@ void WorkspaceApplication::open(const luciole::InstanceRequest& request) {
     first = first ? first : tab;
   }
   if (!first) {
-    host.surface.close();
-    throw std::runtime_error("Close a tab before opening another window.");
+    if (!existing) {
+      host.surface.close();
+    }
+    throw std::runtime_error(
+        existing ? "Close a tab before opening another." : "Close a tab before opening another window."
+    );
   }
   select(window, first);
   m_connection.extension<luciole::DesktopIntegration>().activate(request.activationToken, host.surface.wlSurface());
@@ -266,7 +278,8 @@ void WorkspaceApplication::show(const luciole::FileManagerRequest& request) {
       groups.emplace_back(std::move(folder), std::vector{location});
     }
   }
-  const auto window = newWindow();
+  const auto existing = m_defaults.singleWindow ? browsingWindow() : luciole::WindowId{0};
+  const auto window = existing ? existing : newWindow();
   if (!window) {
     throw std::runtime_error("Cannot create a Luciole window.");
   }
@@ -283,6 +296,9 @@ void WorkspaceApplication::show(const luciole::FileManagerRequest& request) {
   }
   if (first) {
     select(window, first);
+    if (existing) {
+      m_connection.activateSurface(m_hosts.at(window)->surface.wlSurface());
+    }
   }
 }
 
@@ -972,6 +988,22 @@ luciole::WindowId WorkspaceApplication::newWindow(std::unique_ptr<FileChooserSes
   return id;
 }
 
+luciole::WindowId WorkspaceApplication::browsingWindow() const {
+  luciole::WindowId first = 0;
+  for (const auto& [id, host] : m_hosts) {
+    if (host->closed || host->chooser || !host->surface.isRunning() || !m_model.windows().contains(id)) {
+      continue;
+    }
+    if (id == m_focused) {
+      return id;
+    }
+    if (!first) {
+      first = id;
+    }
+  }
+  return first;
+}
+
 luciole::TabId WorkspaceApplication::newTab(
     luciole::WindowId window, std::optional<luciole::Location> location, luciole::TabId duplicate, bool activate
 ) {
@@ -1184,6 +1216,13 @@ void WorkspaceApplication::execute(
     }
     break;
   case WorkspaceCommand::NewWindow: {
+    // Single-window mode turns an explicit new window into a tab of the current one.
+    if (m_defaults.singleWindow) {
+      if (!newTab(window, destination ? destination : page.location())) {
+        page.workspaceError("Close a tab before opening another.");
+      }
+      break;
+    }
     if (auto id = newWindow()) {
       const bool restored = !destination && restoreLastWindow(id);
       if (!restored && !newTab(id, destination ? destination : page.location())) {
@@ -1199,7 +1238,7 @@ void WorkspaceApplication::execute(
   case WorkspaceCommand::MoveWindow: {
     luciole::WindowId destinationWindow = 0;
     if (command == WorkspaceCommand::Detach) {
-      destinationWindow = newWindow();
+      destinationWindow = m_defaults.singleWindow ? luciole::WindowId{0} : newWindow();
     } else {
       for (const auto& [id, target] : m_hosts) {
         if (id > window && !target->closed) {
@@ -1411,9 +1450,11 @@ void WorkspaceApplication::tabMenu(Host& host, luciole::TabId tab, float x, floa
       {.label = "", .separator = true},
       {.id = 4, .label = "Split View", .glyph = "columns", .shortcut = "F3"},
       {.id = 5, .label = "Swap Panes", .glyph = "arrows-cross"},
-      {.id = 6, .label = "Move Tab to New Window", .glyph = "device-desktop"},
-      {.id = 7, .label = "Move Tab to Next Window", .glyph = "arrow-right"}
   };
+  if (!m_defaults.singleWindow) {
+    entries.push_back({.id = 6, .label = "Move Tab to New Window", .glyph = "device-desktop"});
+    entries.push_back({.id = 7, .label = "Move Tab to Next Window", .glyph = "arrow-right"});
+  }
   const auto window = host.id;
   page.workspaceMenu(
       std::move(entries),

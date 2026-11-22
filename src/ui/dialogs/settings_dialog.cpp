@@ -114,6 +114,10 @@ SettingsDialog::SettingsDialog(
   addBool(P::ShowPermanentDeletion, "Show Delete Permanently in Context Menus");
   addBool(P::SwitchToNewTab, "Switch to New Folder Tabs");
   addBool(P::RestoreLastWindow, "Restore Tabs from Last Closed Window");
+  addBool(
+      P::SingleWindow, "Single Window",
+      "Launches and Show Items requests open tabs in the existing window; New Window becomes a new tab"
+  );
   card("Terminal");
   addTerminal();
   section("Appearance", "paint");
@@ -383,13 +387,15 @@ void SettingsDialog::addTerminal() {
   );
 }
 
-void SettingsDialog::addBool(luciole::PreferenceKey<bool> key, const std::string& title) {
+void SettingsDialog::addBool(luciole::PreferenceKey<bool> key, const std::string& title, std::string subtitle) {
   Toggle* control = nullptr;
   auto row = ui::row(
       {.justify = FlexJustify::End, .width = 180.0F},
       ui::toggle({.out = &control, .onChange = [this, key](bool value) { send(key, std::optional(value)); }})
   );
-  addRow<bool>(key, title, [control](bool value) { control->setCheckedImmediate(value); }, std::move(row));
+  addRow<bool>(
+      key, title, [control](bool value) { control->setCheckedImmediate(value); }, std::move(row), std::move(subtitle)
+  );
 }
 
 void SettingsDialog::addNumber(

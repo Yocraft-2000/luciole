@@ -3,6 +3,7 @@
 #include "browser/location_presentation.h"
 #include "core/input/key_modifiers.h"
 #include "core/input/key_symbols.h"
+#include "fs/gio_ptr.h"
 #include "model/directory_options.h"
 #include "ui/browser/sidebar_tree_view.h"
 #include "ui/builders.h"
@@ -10,6 +11,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
+#include <gio/gio.h>
+#include <string>
 
 namespace {
   constexpr float kUsageBarHeight = 3.0F;
@@ -31,6 +35,23 @@ namespace {
     bar.setFillColor(colorSpecFromRole(fill));
     bar.setTrackColor(colorSpecFromRole(selected ? ColorRole::PrimaryContainer : ColorRole::SurfaceContainerHighest));
   }
+  // Hover text for a drive row: where it is mounted and how full it is. Usage
+  // arrives after the rows are built, so this is recomputed whenever the usage
+  // refresh lands. The row already shows the name.
+  std::string driveTooltip(const luciole::Drive& drive) {
+    if (!drive.root) {
+      return "Not mounted";
+    }
+    // Edit text covers both native paths and URIs, so network mounts keep an address line.
+    std::string text = luciole::locationEditText(*drive.root);
+    if (drive.usage && drive.usage->size > 0) {
+      if (!text.empty()) {
+        text += '\n';
+      }
+      text += luciole::driveSpaceText(*drive.usage);
+    }
+    return text;
+  }
 } // namespace
 
 std::string_view luciole::driveRemovalLabel(DriveRemoval removal) {
@@ -45,6 +66,16 @@ std::string_view luciole::driveRemovalLabel(DriveRemoval removal) {
     break;
   }
   return {};
+}
+
+std::string luciole::driveSpaceText(const DriveUsage& usage) {
+  const auto used = std::min(usage.used, usage.size);
+  const GString freeText(g_format_size_full(usage.size - used, G_FORMAT_SIZE_IEC_UNITS));
+  const GString sizeText(g_format_size_full(usage.size, G_FORMAT_SIZE_IEC_UNITS));
+  const auto percent = std::llround(100.0 * static_cast<double>(used) / static_cast<double>(usage.size));
+  return std::format(
+      "{} free of {} ({}% used)", freeText ? freeText.get() : "?", sizeText ? sizeText.get() : "?", percent
+  );
 }
 
 luciole::PlacesSidebar::PlacesSidebar(PinService& pins, DriveMonitor& drives) : m_pins(pins), m_drives(drives) {
@@ -124,6 +155,7 @@ void luciole::PlacesSidebar::updateDriveUsage() {
   for (const auto& row : m_driveRows) {
     if (const auto* drive = m_drives.find(row.key); drive != nullptr && drive->root == row.root) {
       applyDriveState(*row.usage, drive->usage, row.selected);
+      row.button->setTooltip(driveTooltip(*drive));
     }
   }
   markLayoutDirty();
@@ -239,7 +271,7 @@ void luciole::PlacesSidebar::addDriveRow(const Drive& drive) {
       ui::label({.text = drive.label, .maxLines = 1, .ellipsize = TextEllipsize::Middle, .flexGrow = 1.0F})
   ));
   name->setUseMarkup(false);
-  raw->setTooltip(drive.root ? locationEditText(*drive.root) : drive.label + " (not mounted)");
+  raw->setTooltip(driveTooltip(drive));
   raw->inputArea()->setTabFocusKey("drive:" + drive.key);
   raw->inputArea()->setOnKeyDown([this, key = drive.key, raw](const InputArea::KeyData& event) {
     if (!event.pressed) {
@@ -281,17 +313,22 @@ void luciole::PlacesSidebar::addDriveRow(const Drive& drive) {
   };
   const auto pointer = std::make_shared<EjectPointer>();
   const auto overEject = [raw, eject](float x) { return eject != nullptr && x >= eject->x() - raw->gap() * 0.5F; };
-  const auto pathTooltip = drive.root ? locationEditText(*drive.root) : drive.label + " (not mounted)";
-  raw->setOnPointerMotion([raw, pointer, overEject, pathTooltip,
+  raw->setOnPointerMotion([this, raw, pointer, overEject, key = drive.key,
                            ejectTooltip = std::string(driveRemovalLabel(drive.removal))](float x, float) {
     if (const bool over = overEject(x); over != pointer->over) {
       pointer->over = over;
-      raw->setTooltip(over ? ejectTooltip : pathTooltip);
+      if (over) {
+        raw->setTooltip(ejectTooltip);
+      } else if (const auto* current = m_drives.find(key); current != nullptr) {
+        raw->setTooltip(driveTooltip(*current));
+      }
     }
   });
-  raw->setOnLeave([raw, pointer, pathTooltip] {
+  raw->setOnLeave([this, raw, pointer, key = drive.key] {
     *pointer = {};
-    raw->setTooltip(pathTooltip);
+    if (const auto* current = m_drives.find(key); current != nullptr) {
+      raw->setTooltip(driveTooltip(*current));
+    }
   });
   raw->setOnPress([pointer, overEject](float x, float, bool pressed) {
     if (pressed) {

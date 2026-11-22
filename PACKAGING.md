@@ -177,6 +177,8 @@ The portal file has no `UseIn` key. Session integration must select it in `porta
 org.freedesktop.impl.portal.FileChooser=luciole;gtk
 ```
 
+Keep the session's other portal preferences when adding this entry; configuration files are selected as a whole rather than merged. End-user setup for distribution packages and NixOS is in the [installation guide](docs/user/installation.md#use-luciole-as-the-file-picker).
+
 Selection requires xdg-desktop-portal. The frontend discovers portal files at startup, so restart it after installing/removing the backend. A listed absent backend permits fallback; an installed backend that fails does not.
 
 ### Shell completions

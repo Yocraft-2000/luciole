@@ -189,6 +189,24 @@ namespace {
     luciole::ConfigService restored(fixture.paths());
     TEST_CHECK(restored.reload() && !restored.settings().browser.restoreLastWindow);
   }
+  void testSingleWindowPreference() {
+    Fixture fixture;
+    luciole::ConfigService service(fixture.paths());
+    TEST_CHECK(service.reload() && !service.settings().browser.singleWindow);
+    fixture.write("config.toml", "[browser]\nsingle_window = true\n");
+    TEST_CHECK(service.reload() && service.settings().browser.singleWindow);
+    const std::array off{luciole::OverrideEdit{luciole::BrowserPreference::SingleWindow, false}};
+    TEST_CHECK(service.saveOverrides(off) == luciole::AtomicWriteState::Durable);
+    luciole::ConfigService restored(fixture.paths());
+    TEST_CHECK(restored.reload() && !restored.settings().browser.singleWindow);
+    const std::array reset{luciole::OverrideEdit{luciole::BrowserPreference::SingleWindow, std::nullopt}};
+    TEST_CHECK(restored.saveOverrides(reset) == luciole::AtomicWriteState::Durable);
+    TEST_CHECK(restored.reload() && restored.settings().browser.singleWindow);
+    fixture.write("config.toml", "[browser]\nsingle_window = 'true'\n");
+    TEST_CHECK(!restored.reload() && restored.settings().browser.singleWindow);
+    fixture.write("config.toml", "[browser]\nsingle_window = false\n");
+    TEST_CHECK(restored.reload() && !restored.settings().browser.singleWindow);
+  }
   void testBackupPreference() {
     Fixture fixture;
     luciole::ConfigService service(fixture.paths());
@@ -1366,6 +1384,7 @@ int main() {
     testDeletionConfirmationPreference();
     testPermanentDeletionMenuPreference();
     testRestoreLastWindowPreference();
+    testSingleWindowPreference();
     testMillerSettings();
     testMillerParents();
     testUnknownSettings();

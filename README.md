@@ -51,7 +51,7 @@ To understand the values and philosophy guiding the project, read our [ethos](ht
 - **File operations:** copy, move, links, batch rename, folder merging, conflict choices, Trash and restoration, with [Undo and Redo](docs/user/file-operations.md#undo-and-redo)
 - **Archives:** browse, create and extract, with password prompts for [encrypted formats](docs/user/file-operations.md#archives)
 - **Places:** an adaptive sidebar with shared bookmarks, mounted drives, LUKS unlock prompts and optional folder trees
-- **File picker:** a [portal backend](PACKAGING.md#filechooser-portal-backend) that gives every application Luciole's Open and Save dialogs; [xdg-desktop-portal-umbriel](https://github.com/noctalia-dev/xdg-desktop-portal-umbriel) selects it automatically when installed, and other desktops can enable it in `portals.conf`
+- **File picker:** a [portal backend](docs/user/installation.md#use-luciole-as-the-file-picker) that provides Luciole's Open and Save dialogs for applications using the FileChooser portal; [xdg-desktop-portal-umbriel](https://github.com/noctalia-dev/xdg-desktop-portal-umbriel) selects it automatically when installed, and other desktops can enable it in `portals.conf`
 - **Desktop integration:** SFTP, SMB and WebDAV locations, Open With, terminal actions and [custom scripts](docs/user/scripts.md)
 - **Configuration:** built-in settings, live-reloaded TOML, icon themes and configurable colors
 

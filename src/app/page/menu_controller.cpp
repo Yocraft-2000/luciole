@@ -318,12 +318,15 @@ void MenuController::openFileMenu(std::optional<luciole::EntryId> id, float x, f
 }
 
 void MenuController::showOpenInMenu(const luciole::ActionRequest& request) {
+  const bool singleWindow = m_page.settings().singleWindow;
   std::vector<ContextMenuControlEntry> entries{
       {.id = NewTab, .label = "New Tab", .glyph = "plus"},
       // Without a second pane, the workspace splits the window to open one.
       {.id = OtherPane, .label = m_page.hasOtherPane() ? "Other Pane" : "New Pane", .glyph = "layout-sidebar-right"},
-      {.id = NewWindow, .label = "New Window", .glyph = "device-desktop"}
   };
+  if (!singleWindow) {
+    entries.push_back({.id = NewWindow, .label = "New Window", .glyph = "device-desktop"});
+  }
   m_submenus.show(
       std::move(entries),
       [this, request](int id) {
@@ -823,10 +826,12 @@ void MenuController::openMenu() {
   }
   std::vector<ContextMenuControlEntry> entries{
       {.id = 9000, .label = "New Tab", .glyph = "plus", .shortcut = "Ctrl+T"},
-      {.id = 9001, .label = "New Window", .glyph = "device-desktop", .shortcut = "Ctrl+N"},
-      {.id = 9002, .label = "Split View", .glyph = "columns", .shortcut = "F3"},
-      {.label = "", .separator = true}
   };
+  if (!m_page.settings().singleWindow) {
+    entries.push_back({.id = 9001, .label = "New Window", .glyph = "device-desktop", .shortcut = "Ctrl+N"});
+  }
+  entries.push_back({.id = 9002, .label = "Split View", .glyph = "columns", .shortcut = "F3"});
+  entries.push_back({.label = "", .separator = true});
   const auto request = m_page.actionRequest(true);
   entries.push_back(actionEntry(Action::Undo, request));
   entries.push_back(actionEntry(Action::Redo, request));

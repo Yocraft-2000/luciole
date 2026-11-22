@@ -3,6 +3,7 @@
 #include "app/page/active_popup.h"
 #include "app/page/page_context.h"
 #include "browser/action_registry.h"
+#include "config/settings.h"
 #include "core/input/key_symbols.h"
 #include "ui/builders.h"
 #include "ui/controls/scroll_view.h"
@@ -96,8 +97,9 @@ void ShortcutsController::open() {
     row(text, keys);
   }
   heading("Tabs and Windows");
+  const bool singleWindow = m_page.settings().singleWindow;
   for (const auto& [text, keys] : kWindows) {
-    row(text, keys);
+    row(singleWindow && text == "New tab / new window" ? "New tab" : text, keys);
   }
   heading("Commands");
   for (const auto& definition : luciole::ActionRegistry::definitions()) {
