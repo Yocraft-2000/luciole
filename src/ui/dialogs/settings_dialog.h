@@ -90,7 +90,6 @@ private:
   };
   std::vector<KeybindBlock> m_keybindBlocks;
   std::vector<Flex*> m_keybindScopePages;
-  std::vector<Button*> m_keybindScopeButtons;
   // Shows m_current's value in a row's control.
   std::map<luciole::BrowserPreferenceId, std::function<void()>> m_rows;
 };

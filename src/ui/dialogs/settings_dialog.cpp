@@ -444,21 +444,22 @@ void SettingsDialog::addTerminal() {
 
 void SettingsDialog::addKeybinds() {
   Flex* page = m_pages.back();
-  auto scopeRow = ui::row({.align = FlexAlign::Center, .wrap = true, .gap = Style::spaceXs});
-  for (std::size_t index = 0; index < luciole::kKeybindScopes.size(); ++index) {
-    Button* button = nullptr;
-    scopeRow->addChild(
-        ui::button(
-            {.out = &button,
-             .text = std::string(keybindScopeTitle(luciole::kKeybindScopes[index])),
-             .controlHeight = Style::controlHeightSm,
-             .variant = ButtonVariant::Ghost,
-             .onClick = [this, index] { selectKeybindScope(index); }}
-        )
-    );
-    m_keybindScopeButtons.push_back(button);
+  std::vector<ui::SegmentedOption> scopes;
+  scopes.reserve(luciole::kKeybindScopes.size());
+  for (const auto scope : luciole::kKeybindScopes) {
+    scopes.push_back({.label = std::string(keybindScopeTitle(scope)), .glyph = {}, .tooltip = {}});
   }
-  page->addChild(std::move(scopeRow));
+  page->addChild(
+      ui::row(
+          {.justify = FlexJustify::Center},
+          ui::segmented(
+              {.options = std::move(scopes),
+               .selectedIndex = 0,
+               .equalSegmentWidths = true,
+               .onChange = [this](std::size_t index) { selectKeybindScope(index); }}
+          )
+      )
+  );
 
   m_keybindBlocks.reserve(luciole::kKeybindCommandCount);
   for (const auto scope : luciole::kKeybindScopes) {
@@ -609,7 +610,6 @@ void SettingsDialog::selectKeybindScope(std::size_t selected) {
     const bool active = index == selected;
     m_keybindScopePages[index]->setVisible(active);
     m_keybindScopePages[index]->setParticipatesInLayout(active);
-    m_keybindScopeButtons[index]->setSelected(active);
   }
   m_body->requestScrollToOffset(0);
 }
