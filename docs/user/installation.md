@@ -416,7 +416,7 @@ Log out and back in after installation and configuration, or restart the portal 
 systemctl --user restart xdg-desktop-portal.service
 ```
 
-Restart the requesting application, then try its Open or Save dialog. The application must use the FileChooser portal for Luciole to appear; application-specific portal preferences may be required. The picker has its own [view, hidden-file and preview settings](configuration.md#browser-preferences).
+Restart the requesting application, then try its Open or Save dialog. The application must use the FileChooser portal for Luciole to appear; application-specific portal preferences may be required. The picker has its own [view, hidden-file and preview settings](configuration.md#browser-preferences). Picker windows use the Wayland app ID `dev.noctalia.luciole-chooser`, so compositor rules can target them without affecting ordinary Luciole windows.
 
 If the old picker still appears, check the selected configuration's filename and precedence, Luciole's installed portal file and the requesting application's portal support. With systemd, inspect errors using:
 
