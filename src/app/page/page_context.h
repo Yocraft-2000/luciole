@@ -202,3 +202,13 @@ inline LayoutRect sceneRect(const Node& node) {
   Node::absolutePosition(&node, x, y);
   return {x, y, node.width(), node.height()};
 }
+
+// Clears leading glyphs when context-menu icons are disabled; call before setEntries().
+inline void applyContextMenuIconPreference(std::vector<ContextMenuControlEntry>& entries, bool iconsEnabled) {
+  if (iconsEnabled) {
+    return;
+  }
+  for (auto& entry : entries) {
+    entry.glyph.clear();
+  }
+}

@@ -470,6 +470,7 @@ void MenuController::openPlaceMenu(const luciole::Bookmark& bookmark, float x, f
         empty->enabled =
             count && *count > 0 && m_page.actionState(Action::EmptyTrash, m_page.actionRequest(false)).enabled;
       }
+      applyContextMenuIconPreference(entries, m_page.settings().contextMenuIcons);
       m_menu->setEntries(std::move(entries));
       m_page.popupSurface()->requestLayout();
     });
@@ -626,13 +627,13 @@ void MenuController::showContextMenu(
 ) {
   m_columns.cancelGesture();
   m_page.cancelDrag();
+  applyContextMenuIconPreference(entries, m_page.settings().contextMenuIcons);
   auto menu = std::make_unique<ContextMenuControl>();
   auto* control = menu.get();
   const bool compact = m_page.settings().compactMenus;
   const float contentHeight = ContextMenuControl::preferredHeight(entries, entries.size(), 1.0F, compact);
   const float height = std::min(contentHeight, m_page.popupMaxHeight());
   control->setCompact(compact);
-  control->setIconsEnabled(m_page.settings().contextMenuIcons);
   control->setMaxVisible(entries.size());
   const float width = std::min(preferredWidth, static_cast<float>(m_page.surface().width()) - 32.0F);
   control->setEntries(std::move(entries));
