@@ -171,7 +171,7 @@ Installing Luciole does not select it as the `inode/directory` MIME default. The
 
 ### FileChooser portal backend
 
-Ship `luciole.portal` and its generated session service together. They register `org.freedesktop.impl.portal.FileChooser` on `org.freedesktop.impl.portal.desktop.luciole`; activation runs `<bindir>/luciole --file-chooser-service`. Picker windows use the Wayland app ID `dev.noctalia.luciole-chooser`; install its NoDisplay desktop entry so shells resolve the picker's name and icon from the same Luciole artwork.
+Ship `luciole.portal` and its generated session service together. They register `org.freedesktop.impl.portal.FileChooser` on `org.freedesktop.impl.portal.desktop.luciole`; activation runs `<bindir>/luciole --file-chooser-service`. Chooser windows use the Wayland app ID `dev.noctalia.luciole-chooser`; install its NoDisplay desktop entry so shells resolve the chooser's name and icon from the same Luciole artwork.
 
 The portal file has no `UseIn` key. Session integration must select it in `portals.conf`, for example:
 
