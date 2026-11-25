@@ -10,7 +10,6 @@
 #include "clipboard/text_clipboard.h"
 #include "config/settings.h"
 #include "core/files/file_watcher.h"
-#include "core/input/key_symbols.h"
 #include "core/input/keybind_matcher.h"
 #include "core/log.h"
 #include "event_loop/deferred_call_poll_source.h"
@@ -36,7 +35,6 @@
 #include <malloc.h>
 #endif
 
-#include <array>
 #include <csignal>
 #include <cstdlib>
 #include <exception>
@@ -59,36 +57,6 @@ namespace {
     WaylandConnection& m_seat;
   };
 
-  void initializeKeys() {
-    const std::array<std::pair<KeybindAction, std::uint32_t>, 8> keys{{
-        {KeybindAction::Cancel, XKB_KEY_Escape},
-        {KeybindAction::Left, XKB_KEY_Left},
-        {KeybindAction::Right, XKB_KEY_Right},
-        {KeybindAction::Up, XKB_KEY_Up},
-        {KeybindAction::Down, XKB_KEY_Down},
-        {KeybindAction::TabNext, XKB_KEY_Tab},
-        {KeybindAction::Delete, XKB_KEY_Delete},
-        {KeybindAction::Save, XKB_KEY_s},
-    }};
-    for (const auto& [action, sym] : keys) {
-      KeybindMatcher::setMatcher(action, [action, sym](std::uint32_t key, std::uint32_t modifiers) {
-        return key == sym && modifiers == (action == KeybindAction::Save ? KeyMod::Ctrl : 0U);
-      });
-    }
-    KeybindMatcher::setMatcher(KeybindAction::Validate, [](std::uint32_t key, std::uint32_t modifiers) {
-      return modifiers == 0 && KeySymbol::isEnterOrSpace(key);
-    });
-    KeybindMatcher::setMatcher(KeybindAction::Validate, [](std::uint32_t sym, std::uint32_t modifiers) {
-      return modifiers == 0 && KeySymbol::isEnterOrSpace(sym);
-    });
-    KeybindMatcher::setMatcher(KeybindAction::Copy, [](std::uint32_t sym, std::uint32_t modifiers) {
-      return sym == XKB_KEY_c && modifiers == KeyMod::Ctrl;
-    });
-    KeybindMatcher::setMatcher(KeybindAction::TabPrevious, [](std::uint32_t sym, std::uint32_t modifiers) {
-      return KeySymbol::isTab(sym) && modifiers == KeyMod::Shift;
-    });
-  }
-
   // Relative arguments (`xdg-open .`) name paths under the launching shell's directory.
   std::optional<luciole::Location> launchLocation(const std::optional<std::string>& text) {
     if (!text) {
@@ -106,6 +74,27 @@ namespace {
     renderer.setTextFontFamily(text::resolveFontFamily(""));
     renderer.setTextScale(text::currentSystemFont().textScale(Style::fontSizeBody));
     return true;
+  }
+
+  // Binds lib controls to the active keybinds, read on every key.
+  void installKeybindMatchers() {
+    using K = luciole::KeybindCommand;
+    const auto bind = [](KeybindAction action, K command) {
+      KeybindMatcher::setMatcher(action, [command](std::uint32_t sym, std::uint32_t modifiers) {
+        return luciole::keybindMatches(command, sym, modifiers);
+      });
+    };
+    bind(KeybindAction::Validate, K::Validate);
+    bind(KeybindAction::Cancel, K::Cancel);
+    bind(KeybindAction::Left, K::MoveLeft);
+    bind(KeybindAction::Right, K::MoveRight);
+    bind(KeybindAction::Up, K::MoveUp);
+    bind(KeybindAction::Down, K::MoveDown);
+    bind(KeybindAction::TabNext, K::FocusNext);
+    bind(KeybindAction::TabPrevious, K::FocusPrevious);
+    Input::setValidateKeyMatcher([](std::uint32_t sym, std::uint32_t modifiers) {
+      return luciole::keybindMatches(luciole::KeybindCommand::Validate, sym, modifiers);
+    });
   }
 
 } // namespace
@@ -140,10 +129,6 @@ int luciole::runApplication(const std::optional<std::string>& initialLocation, S
       return EXIT_SUCCESS;
     }
   }
-  initializeKeys();
-  Input::setValidateKeyMatcher([](std::uint32_t sym, std::uint32_t modifiers) {
-    return modifiers == 0 && KeySymbol::isEnter(sym);
-  });
   g_stopRequested = 0;
   const auto previousTerm = std::signal(SIGTERM, stopRequested);
   const auto previousInt = std::signal(SIGINT, stopRequested);
@@ -153,6 +138,8 @@ int luciole::runApplication(const std::optional<std::string>& initialLocation, S
     if (!config.reload()) {
       throw std::runtime_error(config.issues().front().format());
     }
+    luciole::setActiveKeybinds(config.settings().browser.keybinds);
+    installKeybindMatchers();
     luciole::initializeLibrary();
     Style::setCornerRadiusScale(static_cast<float>(config.settings().browser.cornerRadiusScale));
     Style::setCloseButtonsEnabled(config.settings().browser.showCloseButtons);

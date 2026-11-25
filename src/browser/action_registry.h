@@ -1,6 +1,7 @@
 #pragma once
 
 #include "browser/directory_model.h"
+#include "config/keybinds.h"
 
 #include <array>
 #include <cstddef>
@@ -46,6 +47,7 @@ namespace luciole {
     Descending,
     FoldersFirst,
     HiddenLast,
+    ResetFolderView,
     Open,
     ContainingFolder,
     OriginalLocation,
@@ -128,6 +130,8 @@ namespace luciole {
     bool canUndo = false, canRedo = false;
     bool chooser = false;
     bool singleSelection = false;
+    // Per-folder views are on, and the current folder has its own sort or view mode.
+    bool folderViews = false, folderViewCustomized = false;
   };
   // Actions a file chooser window offers: browsing, selection and New Folder. Everything else would act on files or
   // leave the chooser.
@@ -144,8 +148,8 @@ namespace luciole {
   struct ActionDefinition {
     BrowserAction action;
     std::string_view label;
-    std::string_view shortcut;
     std::string_view glyph;
+    std::optional<KeybindCommand> keybind = std::nullopt;
     ActionScope scope = ActionScope::Global;
     bool destructive = false;
     ActionRule rule = nullptr;

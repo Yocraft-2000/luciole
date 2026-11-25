@@ -6,7 +6,6 @@
 #include "browser/browser_controller.h"
 #include "config/settings.h"
 #include "core/deferred_call.h"
-#include "core/input/key_symbols.h"
 #include "platform/desktop_integration.h"
 #include "render/render_context.h"
 #include "thumbnails/preview_service.h"
@@ -125,24 +124,35 @@ void PreviewController::showQuickPreview() {
 }
 
 bool PreviewController::quickPreviewKey(const KeyboardEvent& event) {
-  if (!m_quickPreview || !event.pressed || event.preedit || event.modifiers != 0) {
+  if (!m_quickPreview || !event.pressed || event.preedit) {
     return false;
   }
-  if (luciole::shortcutMatches(Action::QuickPreview, event.sym, event.modifiers) || KeySymbol::isEscape(event.sym)) {
+  using K = luciole::KeybindCommand;
+  const bool cancel = luciole::keybindMatches(K::Cancel, event.sym, event.modifiers);
+  const bool up = luciole::keybindMatches(K::MoveUp, event.sym, event.modifiers);
+  const bool down = luciole::keybindMatches(K::MoveDown, event.sym, event.modifiers);
+  const bool left = luciole::keybindMatches(K::MoveLeft, event.sym, event.modifiers);
+  const bool right = luciole::keybindMatches(K::MoveRight, event.sym, event.modifiers);
+  const bool navigation = up || down || left || right;
+  const bool quickPreview = luciole::shortcutMatches(Action::QuickPreview, event.sym, event.modifiers);
+  if (!cancel && !navigation && !quickPreview && event.modifiers != 0) {
+    return false;
+  }
+  if (cancel || quickPreview) {
     m_page.dismissPopup();
     return true;
   }
-  // Arrows walk the files as they do in the view behind: Left/Right one item, Up/Down one list item or one grid row.
-  const bool vertical = KeySymbol::isUp(event.sym) || KeySymbol::isDown(event.sym);
-  const bool previous = KeySymbol::isLeft(event.sym) || KeySymbol::isUp(event.sym);
-  if (vertical || KeySymbol::isLeft(event.sym) || KeySymbol::isRight(event.sym)) {
+  // Navigation walks the files as in the view behind: one item left/right, one list row or grid row up/down.
+  const bool vertical = up || down;
+  const bool previous = left || up;
+  if (navigation) {
     auto& model = m_page.browser().model();
     const auto& rows = model.rows();
     const auto selected = model.selectedIds();
     if (selected.size() == 1) {
       const auto found = std::ranges::find(rows, selected.front());
       if (found != rows.end()) {
-        const auto stride = vertical && m_page.viewMode() == luciole::ViewMode::Grid
+        const auto stride = vertical && m_page.viewMode() == luciole::ViewMode::Grid && m_page.fileList()
             ? static_cast<std::ptrdiff_t>(std::max<std::size_t>(1, m_page.fileList()->layoutColumnCount()))
             : 1;
         // Clamped like the grid: Down from the last full row lands on the last item.

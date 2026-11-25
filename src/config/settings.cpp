@@ -1,5 +1,6 @@
 #include "config/settings.h"
 
+#include "config/keybinds.h"
 #include "config/toml_decoder.h"
 #include "fs/xdg_dirs.h"
 
@@ -13,6 +14,8 @@
 #include <optional>
 #include <print>
 #include <sstream>
+#include <stdexcept>
+#include <string>
 #include <string_view>
 #include <sys/stat.h>
 #include <system_error>
@@ -20,6 +23,7 @@
 #include <type_traits>
 #include <unistd.h>
 #include <utility>
+#include <vector>
 
 namespace {
   using luciole::BrowserSettings;
@@ -61,6 +65,11 @@ namespace {
   constexpr auto kChooserStartFolders = std::to_array<Named<luciole::ChooserStartFolder>>(
       {{luciole::ChooserStartFolder::Home, "home"}, {luciole::ChooserStartFolder::Last, "last"}}
   );
+  constexpr auto kColorSchemes = std::to_array<Named<luciole::ColorScheme>>(
+      {{luciole::ColorScheme::Auto, "auto"},
+       {luciole::ColorScheme::Dark, "dark"},
+       {luciole::ColorScheme::Light, "light"}}
+  );
   constexpr auto kDensities = std::to_array<Named<luciole::ViewDensity>>(
       {{luciole::ViewDensity::Compact, "compact"}, {luciole::ViewDensity::Comfortable, "comfortable"}}
   );
@@ -90,6 +99,7 @@ namespace {
     std::string_view expected;
   };
   template <> struct Rule<luciole::DetailsColumnOrder> {};
+  template <> struct Rule<luciole::KeybindConfig> {};
 
   bool accepts(const Rule<std::string>& /*rule*/, const std::string& value) {
     return value.size() <= 4096 && !value.contains('\0') && value.find_first_of("\r\n") == std::string::npos;
@@ -99,6 +109,9 @@ namespace {
   bool accepts(const Rule<double>& rule, double value) { return value >= rule.minimum && value <= rule.maximum; }
   bool accepts(const Rule<luciole::DetailsColumnOrder>& /*rule*/, const luciole::DetailsColumnOrder& order) {
     return luciole::validDetailsColumnOrder(order);
+  }
+  bool accepts(const Rule<luciole::KeybindConfig>& /*rule*/, const luciole::KeybindConfig& config) {
+    return luciole::keybindConfigValid(config);
   }
   template <class T>
     requires std::is_enum_v<T>
@@ -154,6 +167,33 @@ namespace {
     }
     return order;
   }
+  std::optional<luciole::KeybindConfig>
+  decode(const Rule<luciole::KeybindConfig>& /*rule*/, const toml::node& node, const luciole::KeybindConfig& base) {
+    const auto* table = node.as_table();
+    if (table == nullptr) {
+      return std::nullopt;
+    }
+    luciole::KeybindConfig config = base;
+    for (const auto& [key, value] : *table) {
+      const auto command = luciole::keybindCommandFromKey(key.str());
+      const auto* chords = value.as_array();
+      if (!command || chords == nullptr || chords->size() > luciole::kMaxKeybindChords) {
+        return std::nullopt;
+      }
+      luciole::KeybindChords parsed{};
+      std::size_t index = 0;
+      for (const auto& item : *chords) {
+        const auto* spec = item.as_string();
+        const auto chord = spec != nullptr ? luciole::parseKeybindChord(spec->get()) : std::nullopt;
+        if (!chord) {
+          return std::nullopt;
+        }
+        parsed[index++] = *chord;
+      }
+      config.chords(*command) = parsed;
+    }
+    return luciole::keybindConfigValid(config) ? std::optional(config) : std::nullopt;
+  }
   template <class T>
     requires std::is_enum_v<T>
   std::optional<T> decode(const Rule<T>& rule, const toml::node& node) {
@@ -170,6 +210,9 @@ namespace {
   std::string expected(const Rule<double>& rule) { return std::string(rule.expected); }
   std::string expected(const Rule<luciole::DetailsColumnOrder>& /*rule*/) {
     return "expected unique column names including 'type', 'size', and 'modified'; optional columns may be omitted";
+  }
+  std::string expected(const Rule<luciole::KeybindConfig>& /*rule*/) {
+    return "expected a table of command names with arrays of at most four shortcut strings";
   }
   template <class T>
     requires std::is_enum_v<T>
@@ -202,6 +245,29 @@ namespace {
       columns.push_back(luciole::detailsColumnName(column));
     }
     table.insert(key, std::move(columns));
+  }
+  void encode(
+      toml::table& table, std::string_view key, const luciole::KeybindConfig& value,
+      const luciole::KeybindConfig& inherited
+  ) {
+    toml::table commands;
+    for (const auto scope : luciole::kKeybindScopes) {
+      for (const auto command : luciole::keybindCommands(scope)) {
+        if (value.chords(command) == inherited.chords(command)) {
+          continue;
+        }
+        toml::array chords;
+        for (const auto& chord : value.chords(command)) {
+          if (chord) {
+            chords.push_back(luciole::keybindChordSpec(*chord));
+          }
+        }
+        commands.insert(luciole::keybindCommandKey(command), std::move(chords));
+      }
+    }
+    if (!commands.empty()) {
+      table.insert(key, std::move(commands));
+    }
   }
   template <class T>
     requires std::is_enum_v<T>
@@ -265,6 +331,7 @@ namespace {
       describe(P::ShowCloseButtons, "show_close_buttons", [](S& s) -> auto& { return s.showCloseButtons; }),
       describe(P::ReduceAnimations, "reduce_animations", [](S& s) -> auto& { return s.reduceAnimations; }),
       describe(P::UseSSD, "use_ssd", [](S& s) -> auto& { return s.useSSD; }),
+      describe(P::ColorScheme, "color_scheme", [](S& s) -> auto& { return s.colorScheme; }, {kColorSchemes}),
       describe(
           P::BackgroundOpacity, "background_opacity", [](S& s) -> auto& { return s.backgroundOpacity; },
           {0.0, 1.0, "expected a number from 0 to 1"}
@@ -278,6 +345,7 @@ namespace {
       describe(P::DirectoriesFirst, "directories_first", [](S& s) -> auto& { return s.sort.directoriesFirst; }),
       describe(P::HiddenLast, "hidden_last", [](S& s) -> auto& { return s.sort.hiddenLast; }),
       describe(P::ViewMode, "view_mode", [](S& s) -> auto& { return s.viewMode; }, {kViewModes}),
+      describe(P::RememberFolderViews, "remember_folder_views", [](S& s) -> auto& { return s.rememberFolderViews; }),
       describe(
           P::GridIconSize, "grid_icon_size", [](S& s) -> auto& { return s.gridIconSize; }, kGridIconSize
       ),
@@ -410,6 +478,7 @@ namespace {
           {between<16, 8192>, "expected an integer from 16 to 8192"}
       ),
       describe(P::TerminalCommand, "terminal_command", [](S& s) -> auto& { return s.terminalCommand; }),
+      describe(P::Keybinds, "keybinds", [](S& s) -> auto& { return s.keybinds; }),
   };
   constexpr std::size_t kPreferenceCount = std::tuple_size_v<decltype(kPreferences)>;
   static_assert(kPreferenceCount == std::to_underlying(luciole::BrowserPreferenceId::Count));
@@ -510,7 +579,7 @@ namespace {
 
   std::expected<Patch, luciole::ConfigIssues> parse(
       const std::filesystem::path& file, std::string_view text, UnknownSettings unknown = UnknownSettings::Reject,
-      toml::table* document = nullptr
+      toml::table* document = nullptr, const luciole::KeybindConfig* keybindBase = nullptr
   ) {
     auto table = luciole::parseToml(text, file);
     if (!table) {
@@ -547,7 +616,16 @@ namespace {
               return;
             }
             known = true;
-            if (const auto decoded = decode(descriptor.rule, value); decoded && accepts(descriptor.rule, *decoded)) {
+            const auto decoded = [&] {
+              if constexpr (
+                  std::same_as<typename std::remove_cvref_t<decltype(descriptor)>::Value, luciole::KeybindConfig>
+              ) {
+                return decode(descriptor.rule, value, keybindBase != nullptr ? *keybindBase : luciole::KeybindConfig{});
+              } else {
+                return decode(descriptor.rule, value);
+              }
+            }();
+            if (decoded && accepts(descriptor.rule, *decoded)) {
               std::get<index>(patch) = decoded;
             } else {
               decoder.issue(value, preferenceKey(descriptor), expected(descriptor.rule));
@@ -587,7 +665,7 @@ namespace {
     });
   }
 
-  std::string formatPatch(const Patch& patch, toml::table document) {
+  std::string formatPatch(const Patch& patch, toml::table document, const luciole::BrowserSettings& inherited) {
     toml::table browser;
     if (const auto* existing = document["browser"].as_table()) {
       browser = *existing;
@@ -596,7 +674,11 @@ namespace {
       const auto& descriptor = std::get<index>(kPreferences);
       browser.erase(descriptor.key);
       if (const auto& value = std::get<index>(patch)) {
-        encode(browser, descriptor.key, descriptor.rule, *value);
+        if constexpr (std::same_as<typename std::remove_cvref_t<decltype(descriptor)>::Value, luciole::KeybindConfig>) {
+          encode(browser, descriptor.key, *value, inherited.keybinds);
+        } else {
+          encode(browser, descriptor.key, descriptor.rule, *value);
+        }
       }
     });
     document.insert_or_assign("schema_version", luciole::kSchemaVersion);
@@ -637,6 +719,8 @@ template <class T> const T& luciole::preferenceValue(const BrowserSettings& sett
 
 template std::string& luciole::preferenceValue(BrowserSettings&, PreferenceKey<std::string>);
 template const std::string& luciole::preferenceValue(const BrowserSettings&, PreferenceKey<std::string>);
+template luciole::KeybindConfig& luciole::preferenceValue(BrowserSettings&, PreferenceKey<KeybindConfig>);
+template const luciole::KeybindConfig& luciole::preferenceValue(const BrowserSettings&, PreferenceKey<KeybindConfig>);
 template bool& luciole::preferenceValue(BrowserSettings&, PreferenceKey<bool>);
 template int& luciole::preferenceValue(BrowserSettings&, PreferenceKey<int>);
 template double& luciole::preferenceValue(BrowserSettings&, PreferenceKey<double>);
@@ -650,6 +734,7 @@ template luciole::FilenameTruncation& luciole::preferenceValue(BrowserSettings&,
 template luciole::DetailsColumnOrder& luciole::preferenceValue(BrowserSettings&, PreferenceKey<DetailsColumnOrder>);
 template luciole::ThumbnailPolicy& luciole::preferenceValue(BrowserSettings&, PreferenceKey<ThumbnailPolicy>);
 template luciole::ChooserStartFolder& luciole::preferenceValue(BrowserSettings&, PreferenceKey<ChooserStartFolder>);
+template luciole::ColorScheme& luciole::preferenceValue(BrowserSettings&, PreferenceKey<ColorScheme>);
 template const bool& luciole::preferenceValue(const BrowserSettings&, PreferenceKey<bool>);
 template const int& luciole::preferenceValue(const BrowserSettings&, PreferenceKey<int>);
 template const double& luciole::preferenceValue(const BrowserSettings&, PreferenceKey<double>);
@@ -667,6 +752,24 @@ template const luciole::ThumbnailPolicy&
 luciole::preferenceValue(const BrowserSettings&, PreferenceKey<ThumbnailPolicy>);
 template const luciole::ChooserStartFolder&
 luciole::preferenceValue(const BrowserSettings&, PreferenceKey<ChooserStartFolder>);
+template const luciole::ColorScheme& luciole::preferenceValue(const BrowserSettings&, PreferenceKey<ColorScheme>);
+
+std::string_view luciole::sortFieldName(SortField field) {
+  const auto* found = std::ranges::find(kSortFields, field, &Named<SortField>::value);
+  return found != kSortFields.end() ? found->name : std::string_view{};
+}
+std::optional<luciole::SortField> luciole::sortFieldFromName(std::string_view name) {
+  const auto* found = std::ranges::find(kSortFields, name, &Named<SortField>::name);
+  return found != kSortFields.end() ? std::optional(found->value) : std::nullopt;
+}
+std::string_view luciole::viewModeName(ViewMode mode) {
+  const auto* found = std::ranges::find(kViewModes, mode, &Named<ViewMode>::value);
+  return found != kViewModes.end() ? found->name : std::string_view{};
+}
+std::optional<luciole::ViewMode> luciole::viewModeFromName(std::string_view name) {
+  const auto* found = std::ranges::find(kViewModes, name, &Named<ViewMode>::name);
+  return found != kViewModes.end() ? std::optional(found->value) : std::nullopt;
+}
 
 std::vector<luciole::OverrideEdit> luciole::inheritAllPreferences() {
   std::vector<OverrideEdit> edits;
@@ -704,7 +807,9 @@ static luciole::SettingsResult loadLayers(const luciole::ConfigPaths& paths, boo
     if (!*text) {
       continue;
     }
-    auto parsed = parse(*file, **text, UnknownSettings::Warn);
+    auto parsed = parse(
+        *file, **text, UnknownSettings::Warn, nullptr, file == &paths.overrides ? &settings.browser.keybinds : nullptr
+    );
     if (!parsed) {
       auto& errors = parsed.error();
       issues.insert(issues.end(), std::make_move_iterator(errors.begin()), std::make_move_iterator(errors.end()));
@@ -763,6 +868,7 @@ luciole::AtomicWriteState luciole::ConfigService::saveOverrides(std::span<const 
     return AtomicWriteState::NotCommitted;
   }
   Settings candidate;
+  Settings inherited;
   const auto result = updateTextFileAtomic(
       m_paths.overrides,
       [&](const std::optional<std::string>& current) -> std::expected<std::optional<std::string>, std::string> {
@@ -785,9 +891,12 @@ luciole::AtomicWriteState luciole::ConfigService::saveOverrides(std::span<const 
             return std::unexpected("invalid base configuration");
           }
           applyPatch(candidate, *parsed);
+          applyPatch(inherited, *parsed);
         }
         toml::table document;
-        auto patch = parse(m_paths.overrides, current.value_or(""), UnknownSettings::Warn, &document);
+        auto patch = parse(
+            m_paths.overrides, current.value_or(""), UnknownSettings::Warn, &document, &inherited.browser.keybinds
+        );
         if (!patch) {
           m_issues = std::move(patch.error());
           return std::unexpected("invalid existing settings");
@@ -800,7 +909,7 @@ luciole::AtomicWriteState luciole::ConfigService::saveOverrides(std::span<const 
         if (*patch == previous) {
           return std::nullopt;
         }
-        return formatPatch(*patch, std::move(document));
+        return formatPatch(*patch, std::move(document), inherited.browser);
       }
   );
   if (result.state != AtomicWriteState::NotCommitted) {

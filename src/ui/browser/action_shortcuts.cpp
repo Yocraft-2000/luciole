@@ -1,54 +1,14 @@
 #include "ui/browser/action_shortcuts.h"
 
-#include "core/input/key_modifiers.h"
+#include "config/keybinds.h"
 
-#include <array>
+#include <format>
 #include <string>
 #include <string_view>
-#include <utility>
-#include <xkbcommon/xkbcommon.h>
-
-namespace {
-  using Chords = std::array<std::optional<KeyChord>, luciole::kBrowserActionCount>;
-
-  std::optional<KeyChord> parseShortcut(std::string_view shortcut) {
-    if (shortcut.empty()) {
-      return std::nullopt;
-    }
-    std::string spec(shortcut);
-    // The table shows the glyph; xkb names the key "comma".
-    if (spec.ends_with("+,")) {
-      spec.replace(spec.size() - 1, 1, "comma");
-    }
-    auto chord = parseKeyChordSpec(spec);
-    if (chord) {
-      chord->sym = xkb_keysym_to_lower(chord->sym);
-    }
-    return chord;
-  }
-
-  const Chords& chords() {
-    static const Chords table = [] {
-      Chords parsed;
-      for (const auto& definition : luciole::ActionRegistry::definitions()) {
-        parsed[std::to_underlying(definition.action)] = parseShortcut(definition.shortcut);
-      }
-      return parsed;
-    }();
-    return table;
-  }
-} // namespace
-
-const std::optional<KeyChord>& luciole::actionChord(BrowserAction action) {
-  return chords()[std::to_underlying(action)];
-}
 
 bool luciole::shortcutMatches(BrowserAction action, std::uint32_t sym, std::uint32_t modifiers) {
-  const auto& chord = actionChord(action);
-  // Shift turns letter keysyms upper case, so shifted chords accept either case.
-  return chord
-      && chord->modifiers == modifiers
-      && (chord->sym == sym || ((modifiers & KeyMod::Shift) != 0 && xkb_keysym_to_lower(sym) == chord->sym));
+  const auto command = ActionRegistry::definition(action).keybind;
+  return command && keybindMatches(*command, sym, modifiers);
 }
 
 std::optional<luciole::BrowserAction>
@@ -59,4 +19,19 @@ luciole::shortcutAction(std::initializer_list<BrowserAction> actions, std::uint3
     }
   }
   return std::nullopt;
+}
+
+std::string luciole::actionShortcutLabel(BrowserAction action) {
+  const auto command = ActionRegistry::definition(action).keybind;
+  return command ? keybindShortcutLabel(*command) : std::string();
+}
+
+std::string luciole::shortcutTooltip(std::string_view text, BrowserAction action) {
+  const std::string shortcut = actionShortcutLabel(action);
+  return shortcut.empty() ? std::string(text) : std::format("{} ({})", text, shortcut);
+}
+
+std::string luciole::shortcutTooltip(std::string_view text, KeybindCommand command) {
+  const std::string shortcut = keybindShortcutLabel(command);
+  return shortcut.empty() ? std::string(text) : std::format("{} ({})", text, shortcut);
 }

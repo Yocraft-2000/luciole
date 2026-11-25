@@ -3,8 +3,9 @@
 #include "app/page/active_popup.h"
 #include "app/page/page_context.h"
 #include "browser/action_registry.h"
+#include "config/keybinds.h"
 #include "config/settings.h"
-#include "core/input/key_symbols.h"
+#include "ui/browser/action_shortcuts.h"
 #include "ui/builders.h"
 #include "ui/controls/scroll_view.h"
 #include "ui/dialogs/dialog_chrome.h"
@@ -13,43 +14,71 @@
 #include "wayland/popup_surface.h"
 #include "wayland/wayland_seat.h"
 
-#include <array>
+#include <initializer_list>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace {
-  using Shortcut = std::pair<std::string_view, std::string_view>;
+  using Shortcut = std::pair<std::string, std::string>;
+  using K = luciole::KeybindCommand;
 
-  constexpr auto kFiles = std::to_array<Shortcut>({
-      {"Move the cursor", "Arrow keys"},
-      {"Enter folder (List, Columns)", "Right"},
-      {"Parent folder (List, Columns)", "Left"},
-      {"Parent folder", "Backspace"},
-      {"Open folder in a new tab", "Ctrl+Enter"},
-      {"Open folder in a new tab, opposite focus preference", "Ctrl+Shift+Enter"},
-      {"First / last item", "Home / End"},
-      {"Previous / next page", "Page Up / Page Down"},
-      {"Extend the selection", "Shift+Arrow keys"},
-      {"Move the cursor without selecting", "Ctrl+Arrow keys"},
-      {"Select or unselect the item under the cursor", "Ctrl+Space"},
-      {"Item menu", "Menu / Shift+F10"},
-      {"Return to the file list", "Escape"},
-      {"Next / previous control", "Tab / Shift+Tab"},
-      {"Search files", "Ctrl+K"},
-      {"Icon size", "Ctrl+Plus / Ctrl+Minus / Ctrl+0"},
-  });
+  std::string joinShortcuts(std::initializer_list<K> commands, std::string_view separator) {
+    std::string label;
+    for (const auto command : commands) {
+      const std::string part = luciole::keybindShortcutLabel(command);
+      if (part.empty()) {
+        continue;
+      }
+      if (!label.empty()) {
+        label += separator;
+      }
+      label += part;
+    }
+    return label;
+  }
 
-  constexpr auto kWindows = std::to_array<Shortcut>({
-      {"New tab / new window", "Ctrl+T / Ctrl+N"},
-      {"Duplicate tab / reopen closed tab", "Ctrl+Shift+D / Ctrl+Shift+T"},
-      {"Close tab / close focused split pane", "Ctrl+W / Ctrl+Alt+W"},
-      {"Close window", "Ctrl+Q / Ctrl+Shift+W"},
-      {"Next / previous tab", "Ctrl+Tab / Ctrl+Shift+Tab"},
-      {"Go to tab (Alt+9: last)", "Alt+1…Alt+9"},
-      {"Toggle split / switch pane", "F3 / F6"},
-      {"Full screen", "F11"},
-  });
+  std::vector<Shortcut> fileShortcuts() {
+    return {
+        {"Move the cursor", joinShortcuts({K::MoveUp, K::MoveDown}, " / ")},
+        {"Enter folder (List, Columns)", luciole::keybindShortcutLabel(K::MoveRight)},
+        {"Parent folder (List, Columns)", luciole::keybindShortcutLabel(K::MoveLeft)},
+        {"Parent folder", luciole::keybindShortcutLabel(K::ParentFolder)},
+        {"Open folder in a new tab", luciole::keybindShortcutLabel(K::OpenInNewTab)},
+        {"Open folder in a new tab, opposite focus preference",
+         luciole::keybindShortcutLabel(K::OpenInNewTabBackground)},
+        {"First / last item", joinShortcuts({K::MoveFirst, K::MoveLast}, " / ")},
+        {"Previous / next page", joinShortcuts({K::MovePageUp, K::MovePageDown}, " / ")},
+        {"Extend the selection", "Shift+Arrow keys"},
+        {"Move the cursor without selecting", "Ctrl+Arrow keys"},
+        {"Select or unselect the item under the cursor", luciole::keybindShortcutLabel(K::ToggleSelection)},
+        {"Item menu", luciole::keybindShortcutLabel(K::ContextMenu)},
+        {"Return to the file list", luciole::keybindShortcutLabel(K::Cancel)},
+        {"Clear selection", luciole::keybindShortcutLabel(K::ClearSelection)},
+        {"Next / previous control", joinShortcuts({K::FocusNext, K::FocusPrevious}, " / ")},
+        {"Search files", luciole::keybindShortcutLabel(K::Search)},
+        {"Icon size", joinShortcuts({K::ZoomIn, K::ZoomOut, K::ZoomReset}, " / ")},
+    };
+  }
+
+  std::vector<Shortcut> windowShortcuts() {
+    return {
+        {"New tab / new window", joinShortcuts({K::NewTab, K::NewWindow}, " / ")},
+        {"Duplicate tab / reopen closed tab", joinShortcuts({K::DuplicateTab, K::ReopenTab}, " / ")},
+        {"Close tab / close focused split pane", joinShortcuts({K::CloseTab, K::ClosePane}, " / ")},
+        {"Quit / close window", joinShortcuts({K::Quit, K::CloseWindow}, " / ")},
+        {"Next / previous tab", joinShortcuts({K::NextTab, K::PreviousTab}, " / ")},
+        {"Go to tab (9: last)",
+         joinShortcuts(
+             {K::SelectTab1, K::SelectTab2, K::SelectTab3, K::SelectTab4, K::SelectTab5, K::SelectTab6, K::SelectTab7,
+              K::SelectTab8, K::SelectTab9},
+             " … "
+         )},
+        {"Toggle split / switch pane", joinShortcuts({K::SplitView, K::SwitchArea}, " / ")},
+        {"Full screen", luciole::keybindShortcutLabel(K::Fullscreen)},
+    };
+  }
 
   std::unique_ptr<Label> plainLabel(std::string_view text, float size, ColorSpec color, float grow) {
     return ui::label(
@@ -84,6 +113,9 @@ void ShortcutsController::open() {
     );
   };
   const auto row = [&](std::string_view text, std::string_view keys) {
+    if (keys.empty()) {
+      return;
+    }
     content->addChild(
         ui::row(
             {.justify = FlexJustify::SpaceBetween, .gap = Style::spaceMd},
@@ -93,18 +125,19 @@ void ShortcutsController::open() {
     );
   };
   heading("Files and Folders");
-  for (const auto& [text, keys] : kFiles) {
+  for (const auto& [text, keys] : fileShortcuts()) {
     row(text, keys);
   }
   heading("Tabs and Windows");
   const bool singleWindow = m_page.settings().singleWindow;
-  for (const auto& [text, keys] : kWindows) {
+  for (const auto& [text, keys] : windowShortcuts()) {
     row(singleWindow && text == "New tab / new window" ? "New tab" : text, keys);
   }
   heading("Commands");
   for (const auto& definition : luciole::ActionRegistry::definitions()) {
-    if (!definition.shortcut.empty()) {
-      row(definition.label, definition.shortcut);
+    const std::string keys = luciole::actionShortcutLabel(definition.action);
+    if (!keys.empty()) {
+      row(definition.label, keys);
     }
   }
   auto root = ui::column(
@@ -120,20 +153,22 @@ void ShortcutsController::open() {
 }
 
 bool ShortcutsController::key(const KeyboardEvent& event) {
-  if (m_scroll == nullptr
-      || !event.pressed
-      || event.modifiers != 0
-      || m_page.activePopup().kind() != ActivePopup::Kind::KeyboardShortcuts) {
+  if (m_scroll == nullptr || !event.pressed || m_page.activePopup().kind() != ActivePopup::Kind::KeyboardShortcuts) {
     return false;
   }
+  using K = luciole::KeybindCommand;
   const float page = m_scroll->contentViewportHeight() * 0.9F;
-  if (KeySymbol::isUp(event.sym) || KeySymbol::isDown(event.sym)) {
-    m_scroll->scrollBy(KeySymbol::isUp(event.sym) ? -Style::scrollWheelStep : Style::scrollWheelStep);
-  } else if (KeySymbol::isPageUp(event.sym) || KeySymbol::isPageDown(event.sym)) {
-    m_scroll->scrollBy(KeySymbol::isPageUp(event.sym) ? -page : page);
-  } else if (KeySymbol::isHome(event.sym)) {
+  if (luciole::keybindMatches(K::MoveUp, event.sym, event.modifiers)) {
+    m_scroll->scrollBy(-Style::scrollWheelStep);
+  } else if (luciole::keybindMatches(K::MoveDown, event.sym, event.modifiers)) {
+    m_scroll->scrollBy(Style::scrollWheelStep);
+  } else if (luciole::keybindMatches(K::MovePageUp, event.sym, event.modifiers)) {
+    m_scroll->scrollBy(-page);
+  } else if (luciole::keybindMatches(K::MovePageDown, event.sym, event.modifiers)) {
+    m_scroll->scrollBy(page);
+  } else if (luciole::keybindMatches(K::MoveFirst, event.sym, event.modifiers)) {
     m_scroll->setScrollOffset(0.0F);
-  } else if (KeySymbol::isEnd(event.sym)) {
+  } else if (luciole::keybindMatches(K::MoveLast, event.sym, event.modifiers)) {
     m_scroll->setScrollOffset(m_scroll->maxScrollOffset());
   } else {
     return false;

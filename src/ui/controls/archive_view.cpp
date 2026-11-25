@@ -1,15 +1,19 @@
 #include "ui/controls/archive_view.h"
 
-#include "core/input/key_symbols.h"
+#include "config/keybinds.h"
+#include "core/input/key_modifiers.h"
 #include "fs/gio_ptr.h"
 #include "ui/browser/file_error_text.h"
 #include "ui/browser/file_icon.h"
 #include "ui/builders.h"
 #include "ui/controls/scroll_view.h"
+#include "ui/controls/virtual_grid_view.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <format>
+#include <optional>
 #include <utility>
 
 namespace {
@@ -351,7 +355,7 @@ void ArchiveView::up() {
   rebuild();
 }
 bool ArchiveView::key(std::uint32_t symbol, std::uint32_t modifiers) {
-  if (symbol == XKB_KEY_a && modifiers == KeyMod::Ctrl) {
+  if (luciole::keybindMatches(luciole::KeybindCommand::SelectAll, symbol, modifiers)) {
     m_selection.clear();
     if (m_catalog) {
       for (auto index : m_rows) {
@@ -361,31 +365,47 @@ bool ArchiveView::key(std::uint32_t symbol, std::uint32_t modifiers) {
     selectionChanged();
     return true;
   }
-  if (KeySymbol::isBackspace(symbol) || (symbol == XKB_KEY_Up && modifiers == KeyMod::Alt)) {
+  if (luciole::keybindMatches(luciole::KeybindCommand::ParentFolder, symbol, modifiers)
+      || luciole::keybindMatches(luciole::KeybindCommand::Up, symbol, modifiers)) {
     up();
     return true;
   }
-  if (KeySymbol::isEnter(symbol)) {
+  if (luciole::keybindMatches(luciole::KeybindCommand::Open, symbol, modifiers)) {
     if (m_focus) {
       activate(*m_focus);
     }
     return true;
   }
-  if (!m_rows.empty()
-      && (KeySymbol::isUp(symbol) || KeySymbol::isDown(symbol) || symbol == XKB_KEY_Home || symbol == XKB_KEY_End)) {
+  using K = luciole::KeybindCommand;
+  constexpr std::array navigationCommands{K::MoveUp,   K::MoveDown,   K::MoveFirst,
+                                          K::MoveLast, K::MovePageUp, K::MovePageDown};
+  const auto match = luciole::keybindBestMatch(navigationCommands, symbol, modifiers);
+  if (!m_rows.empty() && match) {
     std::size_t index = m_focus.value_or(0);
-    if (symbol == XKB_KEY_Home) {
+    const std::size_t stride = m_grid ? m_grid->pageItemStride() : 1;
+    switch (match->command) {
+    case K::MoveFirst:
       index = 0;
-    } else if (symbol == XKB_KEY_End) {
+      break;
+    case K::MoveLast:
       index = m_rows.size() - 1;
-    } else if (KeySymbol::isUp(symbol)) {
+      break;
+    case K::MovePageDown:
+      index = std::min(index + stride, m_rows.size() - 1);
+      break;
+    case K::MovePageUp:
+      index = index > stride ? index - stride : 0;
+      break;
+    case K::MoveUp:
       if (index) {
         --index;
       }
-    } else {
+      break;
+    default:
       index = std::min(index + 1, m_rows.size() - 1);
+      break;
     }
-    choose(index, modifiers);
+    choose(index, match->extraModifiers);
     return true;
   }
   return false;

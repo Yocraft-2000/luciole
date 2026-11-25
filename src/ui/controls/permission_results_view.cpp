@@ -1,7 +1,7 @@
 #include "ui/controls/permission_results_view.h"
 
 #include "browser/location_presentation.h"
-#include "core/input/key_symbols.h"
+#include "config/keybinds.h"
 #include "ui/browser/file_error_text.h"
 #include "ui/builders.h"
 #include "ui/controls/glyph.h"
@@ -165,26 +165,40 @@ PermissionResultsView::PermissionResultsView() : m_adapter(std::make_unique<Adap
   );
 }
 bool PermissionResultsView::navigate(std::uint32_t key, std::uint32_t modifiers, bool preedit) {
-  if (preedit || modifiers != 0 || !m_results || m_results->empty()) {
+  if (preedit || !m_results || m_results->empty()) {
     return false;
   }
   const auto last = m_results->size() - 1;
   const auto current = std::min(m_grid->selectedIndex().value_or(0), last);
   auto next = current;
   const auto page = m_grid->pageItemStride();
-  if (KeySymbol::isHome(key)) {
+  using K = luciole::KeybindCommand;
+  constexpr std::array navigationCommands{K::MoveFirst, K::MoveLast,   K::MoveUp,
+                                          K::MoveDown,  K::MovePageUp, K::MovePageDown};
+  const auto match = luciole::keybindBestMatch(navigationCommands, key, modifiers);
+  if (!match || match->extraModifiers != 0) {
+    return false;
+  }
+  switch (match->command) {
+  case K::MoveFirst:
     next = 0;
-  } else if (KeySymbol::isEnd(key)) {
+    break;
+  case K::MoveLast:
     next = last;
-  } else if (KeySymbol::isUp(key)) {
+    break;
+  case K::MoveUp:
     next = current > 0 ? current - 1 : 0;
-  } else if (KeySymbol::isDown(key)) {
+    break;
+  case K::MoveDown:
     next = std::min(current + 1, last);
-  } else if (KeySymbol::isPageUp(key)) {
+    break;
+  case K::MovePageUp:
     next = current > page ? current - page : 0;
-  } else if (KeySymbol::isPageDown(key)) {
+    break;
+  case K::MovePageDown:
     next = std::min(current + page, last);
-  } else {
+    break;
+  default:
     return false;
   }
   m_grid->setSelectedIndex(next, true);

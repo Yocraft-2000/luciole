@@ -57,6 +57,8 @@ luciole config validate /path/to/config.toml
 
 File and folder artwork follows the desktop icon theme. Theme selection changes and edits to active SVG/PNG artwork refresh automatically. If desktop settings support is unavailable, Luciole uses the icon theme named by GTK settings.ini. Nix users need a fresh development shell after updating runtime dependencies.
 
+Luciole selects the theme's drawing for the displayed icon size, including display scaling. Size-specific SVGs can have different detail and spacing; large vector artwork is not substituted for a matching smaller drawing. Changing zoom can therefore change an icon's drawing as well as its size.
+
 Icon themes that declare `FollowsColorScheme=true` in their `index.theme` (Breeze, Tela, Colloid, and others) draw their recolorable parts with the `colors.toml` palette, as KDE apps do: folders take the primary color and monochrome icons the text color. They update when the palette changes. Other themes keep their own colors.
 
 ## Browser preferences
@@ -66,6 +68,7 @@ All keys below belong in `[browser]`. Dimensions are logical pixels unless state
 | Key | Default | Accepted values / meaning |
 | --- | --- | --- |
 | `view_mode` | `"list"` | `"list"`, `"grid"`, `"miller"` |
+| `remember_folder_views` | `false` | Sort and Grid/List changes apply to the current folder only and are remembered for it; file picker windows keep their own. See [per-folder view and sort](browsing.md#per-folder-view-and-sort) |
 | `grid_icon_size` | `96` | `32`, `48`, `64`, `80`, `96`, `128`, `160`, `192`, `256` |
 | `list_icon_size` | `0` | `0` uses the default size, `32`; or `16`, `20`, `24`, `28`, `32`, `40`, `48`, `64`. Rows grow with the icon. |
 | `miller_icon_size` | `0` | Columns view icon size: `0` uses the density's size (`20` compact, `28` comfortable); otherwise the same values as `list_icon_size` |
@@ -84,6 +87,7 @@ All keys below belong in `[browser]`. Dimensions are logical pixels unless state
 | `show_close_buttons` | `true` | Show the glyph close buttons on tabs, dialogs, panes, the preview and archives. Disable to hide them live; the window controls, Escape and Close/Cancel actions still close things |
 | `reduce_animations` | `false` | Skip animated transitions, such as file entries fading in as they scroll into Grid and List views, smooth scrolling and the sidebar drawer. Applies live |
 | `use_ssd` | `true` | Let the compositor draw the title bar and borders (server-side decoration) when it supports them. Disable to always draw Luciole's own (client-side decoration). Open windows switch live |
+| `color_scheme` | `"auto"` | `"auto"` uses Noctalia's current palette from `colors.toml` (the built-in dark palette without one); `"dark"` and `"light"` use that variant from `colors.toml`, or Luciole's built-in dark or light palette when the file has none (Noctalia versions that write only `[colors]`). Applies live |
 | `background_opacity` | `1.0` | Number from `0` (clear) to `1` (opaque) for the window background; tabs, toolbar, sidebar and file area share it. Menus and dialogs stay opaque |
 | `corner_radius_scale` | `1.0` | Number from `0` (square) to `2` (extra rounded) scaling every corner radius, like Noctalia's setting of the same name. Open windows, menus and dialogs update live |
 | `activation_mode` | `"double_click"` | `"single_click"`, `"double_click"` |
@@ -156,17 +160,43 @@ Local policy generates thumbnails for eligible local files. It skips network sha
 
 The Image/PDF Size Limit applies to image and PDF sources. Video stills and embedded audio artwork use seekable media access and are not rejected merely because their files exceed that limit. There is no pixel-count limit: a decoding helper's memory, CPU time and output limits decide how large an image can be, which admits phone photos up to about 200 megapixels. Settings also provides cache inspection/clearing. Luciole reuses compatible shared thumbnails and preserves cache files created or replaced by other applications. Older Luciole video thumbnails regenerate using representative frames instead of always taking the opening frame. With `ffmpegthumbnailer` installed, newly generated video thumbnails include its filmstrip edges, stored in the shared cache so other file managers display them too. Missing/failing helpers keep a plain thumbnail. The edges come from the thumbnailer rather than the icon theme. Native video previews generate clean frames separately.
 
+### Keyboard shortcuts
+
+Shortcuts live in `[browser.keybinds]`. Each key names a command and holds an array of up to four chords. Commands you omit keep their built-in defaults; an empty array unassigns the command. Saving from Settings → Keybinds writes only the commands that differ from the inherited configuration, so restoring a built-in default still overrides a custom `config.toml`. Reset all settings restores every default.
+
+```toml
+[browser.keybinds]
+search = ["Ctrl+F", "Ctrl+K"]
+open_in_new_tab = ["Ctrl+Return"]
+zoom_in = ["Ctrl+equal", "Ctrl+plus", "Ctrl+Shift+plus", "Ctrl+KP_Add"]
+quick_preview = []
+```
+
+Commands are grouped into three independent scopes. Two commands in the same scope cannot share a chord; the same chord can appear once in each scope. The keybinds section refuses same-scope conflicts, and warns when a chord is already used in another scope because the other command may take precedence depending on focus. Super combinations are reserved for the compositor and are rejected. Unlike other settings tables, an unknown command name or malformed chord in `[browser.keybinds]` invalidates the whole file, so check the reported error before restarting.
+
+| Scope | Commands |
+| --- | --- |
+| Controls | `validate`, `cancel`, `focus_next`, `focus_previous`, `move_left`, `move_right`, `move_up`, `move_down`, `move_first`, `move_last`, `move_page_up`, `move_page_down` |
+| File Browser | `back`, `forward`, `up`, `home_folder`, `refresh`, `edit_location`, `search`, `view_grid`, `view_list`, `view_miller`, `toggle_hidden`, `toggle_sidebar`, `toggle_preview`, `quick_preview`, `open`, `open_in_new_tab`, `open_in_new_tab_background`, `toggle_selection`, `rename`, `create_folder`, `create_file`, `cut`, `copy`, `paste`, `trash`, `delete_permanently`, `properties`, `terminal`, `parent_folder`, `context_menu`, `select_all`, `invert_selection`, `select_pattern`, `clear_selection`, `undo`, `redo`, `settings`, `keyboard_shortcuts`, `zoom_in`, `zoom_out`, `zoom_reset` |
+| Tabs and Windows | `new_tab`, `close_tab`, `duplicate_tab`, `reopen_tab`, `next_tab`, `previous_tab`, `split_view`, `switch_area`, `close_pane`, `new_window`, `close_window`, `fullscreen`, `quit`, `select_tab_1`, `select_tab_2`, `select_tab_3`, `select_tab_4`, `select_tab_5`, `select_tab_6`, `select_tab_7`, `select_tab_8`, `select_tab_9` |
+
+The archive viewer follows `cancel`, `focus_next`, `focus_previous`, `move_up`, `move_down`, `move_first`, `move_last`, `move_page_up`, `move_page_down`, `select_all`, `parent_folder`, `up` and `open`. `quit` is handled globally, including while an archive or menu popup is open. `select_tab_9` always selects the last tab. Other Escape handlers (returning to the file list, the location bar, search completion, menus, previews and dialogs) also follow `cancel`; `clear_selection` still clears the file list selection.
+
+Chords use key names such as `Return`, `Escape`, `Tab`, `space`, `BackSpace`, `Delete`, `Menu`, `Home`, `End`, `Page_Up`, `Page_Down`, `equal`, `minus`, `plus`, `comma`, `KP_Add`, `KP_0` and function keys such as `F4` and `F5`. `Next`/`Prior` are accepted aliases for `Page_Down`/`Page_Up`. `Ctrl+,` and `Ctrl++` are accepted as shorthands for `Ctrl+comma` and `Ctrl+plus`. Except for `validate` and `quick_preview`, printable keys need Ctrl, Alt or another modifier; Shift alone is not enough. Changes apply to open windows immediately.
+
 ## Other writable data
 
 User bookmarks live in `$XDG_CONFIG_HOME/gtk-3.0/bookmarks`, defaulting to `~/.config/gtk-3.0/bookmarks`, shared with Nemo, Nautilus and GTK file choosers. Each line contains a URI and an optional label separated by a space. The older `~/.gtk-bookmarks` is read as a fallback when the modern file has not been found; edits go to the modern path. Read-only or symlink-managed files can be displayed, but Luciole refuses edits that would replace a read-only or linked file. Old Luciole pins are not migrated.
 
-Built-in Places layout, optional last-window tab state and the last file picker folder remain in `$XDG_STATE_HOME/luciole/state.toml`, defaulting to `~/.local/state/luciole/state.toml`. Cached user rows there preserve their placement among built-ins; their contents always come from the shared bookmark file. Deleting a shared user bookmark removes it from Luciole even when an old cache row remains. Tab restoration is controlled by `browser.restore_last_window`.
+Built-in Places layout, Places separators, optional last-window tab state and the last file picker folder remain in `$XDG_STATE_HOME/luciole/state.toml`, defaulting to `~/.local/state/luciole/state.toml`. Cached user rows there preserve their placement among built-ins; their contents always come from the shared bookmark file. Deleting a shared user bookmark removes it from Luciole even when an old cache row remains. Tab restoration is controlled by `browser.restore_last_window`.
+
+Per-folder sort and view choices live in `$XDG_STATE_HOME/luciole/folder_views.toml`, one `[[folders]]` row per folder URI with optional `sort_by`, `sort_descending`, `directories_first`, `hidden_last` and `view_mode` (`"list"` or `"grid"`) fields. Invalid rows are skipped. Luciole replaces an unreadable file with its in-memory settings the next time a folder's settings change. It keeps the 4096 most recently changed folders, or fewer when their rows would make the file larger than 240 KiB; the least recently changed go first.
 
 Custom bookmark icons are saved as an optional `icon` field on the matching bookmark row in this private state file. They are Luciole-only; the shared GTK bookmark format has no icon field.
 
 Thumbnails use the shared `$XDG_CACHE_HOME/thumbnails/` cache. The default cache root is `~/.cache`. Custom actions live in the [Scripts directory](scripts.md).
 
-An optional `colors.toml` beside the settings files supplies the supported Noctalia palette handoff. The installed template is `share/luciole/templates/colors.toml`; UI-scale preferences remain planned. See [Packaging](../../PACKAGING.md#configuration-and-writable-data) for the complete ownership and installation notes.
+An optional `colors.toml` beside the settings files supplies the Noctalia palette handoff; Noctalia's built-in [Luciole template](https://docs.noctalia.dev/noctalia/templates/official/luciole/) writes it. UI-scale preferences remain planned. See [Packaging](../../PACKAGING.md#configuration-and-writable-data) for the complete ownership and installation notes.
 
 Text follows the system font: the family and size from GNOME's `font-name` setting, or `gtk-font-name` in `~/.config/gtk-3.0/settings.ini` (then `gtk-4.0`), as written by GNOME Settings or nwg-look. The size sets body text (11 pt is about 14.7 px) and other text keeps its proportions; without a system font, Luciole uses Fontconfig's `sans-serif` at 14 px. GNOME's Large Text (`text-scaling-factor`) multiplies it. Changes apply to open windows right away, including symlinked `settings.ini` files. Icons keep their size.
 

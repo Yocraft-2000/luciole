@@ -100,6 +100,11 @@ bool SettingsController::key(const KeyboardEvent& event) {
   if (!m_view) {
     return false;
   }
+  // While a keybind recorder is capturing, its input area owns the keys, including Cancel and Tab.
+  if (auto* focused = m_page.popupDispatcher().focusedArea(); focused && focused->capturesAllKeys()) {
+    focused->dispatchKey(event.sym, event.utf32, event.modifiers, event.pressed, event.preedit);
+    return true;
+  }
   if (event.pressed && luciole::shortcutMatches(luciole::BrowserAction::Settings, event.sym, event.modifiers)) {
     m_page.dismissPopup();
     return true;

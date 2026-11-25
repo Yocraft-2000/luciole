@@ -193,6 +193,55 @@ namespace {
     pumpUntil([&] { return !owner; });
     drain();
   }
+
+  void serviceNetworkRefusal(const fs::path& root) {
+    const auto tree = root / "refused";
+    fs::create_directory(tree);
+    std::ofstream(tree / "one") << 'x';
+    luciole::FolderTotalsService service;
+    int changes = 0;
+    service.setChangedCallback([&] { ++changes; });
+    service.setNetworkFilesystemCheck([](const std::string&) { return true; });
+    const std::vector targets{entry(tree)};
+    TEST_CHECK(service.start(targets));
+    pumpUntil([&] { return !service.busy(); });
+    drain();
+    TEST_CHECK(service.snapshot().phase == FolderTotalsPhase::Unsupported);
+    TEST_CHECK(service.snapshot().unsupported == 1 && service.snapshot().partial());
+    TEST_CHECK(service.snapshot().bytes == 0 && service.snapshot().files == 0);
+    TEST_CHECK(changes > 0);
+    luciole::FolderTotalsService plain;
+    TEST_CHECK(plain.start(targets));
+    pumpUntil([&] { return !plain.busy(); });
+    TEST_CHECK(plain.snapshot().phase == FolderTotalsPhase::Complete && plain.snapshot().files == 1);
+  }
+
+  // Same-device scope keeps same-filesystem totals identical to an unscoped walk; refusing a nested filesystem
+  // without traversing it needs a real mount, verified manually since a fixture cannot create one unprivileged.
+  void sameDeviceContainment(const fs::path& root) {
+    const auto tree = root / "local-only";
+    fs::create_directories(tree / "nested");
+    std::ofstream(tree / "one") << "abc";
+    std::ofstream(tree / "nested" / "two") << "de";
+    luciole::FolderTotalsService service;
+    const std::vector targets{entry(tree)};
+    TEST_CHECK(service.start(targets));
+    pumpUntil([&] { return !service.busy(); });
+    drain();
+    const auto plain = service.snapshot();
+    TEST_CHECK(plain.phase == FolderTotalsPhase::Complete && !plain.partial());
+    TEST_CHECK(plain.bytes == 5 && plain.files == 2 && plain.folders == 1);
+    service.setSameDeviceOnly(true);
+    TEST_CHECK(service.start(targets));
+    pumpUntil([&] { return !service.busy(); });
+    drain();
+    TEST_CHECK(service.snapshot().phase == FolderTotalsPhase::Complete && !service.snapshot().partial());
+    TEST_CHECK(
+        service.snapshot().bytes == plain.bytes
+        && service.snapshot().files == plain.files
+        && service.snapshot().folders == plain.folders
+    );
+  }
 } // namespace
 
 int main() {
@@ -203,6 +252,8 @@ int main() {
   progressAndRaces(root);
   unreadable(root);
   lifecycle(root);
+  serviceNetworkRefusal(root);
+  sameDeviceContainment(root);
   fs::remove_all(root);
   std::println("folder totals checks passed");
 }

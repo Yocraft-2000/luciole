@@ -1,6 +1,7 @@
 #include "browser/browser_controller.h"
 
 #include "browser/directory_tree.h"
+#include "browser/folder_views.h"
 #include "browser/location_presentation.h"
 #include "fs/file_query.h"
 
@@ -12,14 +13,22 @@
 
 namespace {
   std::uint64_t nextContext = 0;
-}
+
+  // Same containment check as DirectoryTree::releaseLocation.
+  bool locationWithin(const std::string& uri, const luciole::Location& root) {
+    const std::string& rootUri = root.uri();
+    return uri == rootUri || uri.starts_with(rootUri + (rootUri.ends_with('/') ? "" : "/"));
+  }
+} // namespace
 
 struct luciole::BrowserController::ActivationState {
   CancelToken token;
   std::function<void(EntryId, const Location&, std::uint64_t, const std::expected<FileType, FileError>&)> resolved;
 };
 
-luciole::BrowserController::BrowserController(SortOptions sort, bool showHidden, bool showBackups)
+luciole::BrowserController::BrowserController(
+    SortOptions sort, bool showHidden, bool showBackups, const FolderTotalsService::NetworkFilesystemCheck& networkCheck
+)
     : m_activation(std::make_shared<ActivationState>()) {
   m_activation->resolved = [this](
                                EntryId id, const Location& target, std::uint64_t context,
@@ -47,6 +56,7 @@ luciole::BrowserController::BrowserController(SortOptions sort, bool showHidden,
       showMessage("Opening files is not available yet.");
     }
   };
+  m_defaultSort = sort;
   m_model.setSort(sort);
   m_model.setFilter({.showHidden = showHidden, .text = {}, .showBackups = showBackups});
   m_model.setChangedCallback([this] {
@@ -71,6 +81,11 @@ luciole::BrowserController::BrowserController(SortOptions sort, bool showHidden,
       m_session.requestMetadata(index, id, details);
     }
   });
+  for (std::size_t index = 0; index < m_folderSizeSlots.size(); ++index) {
+    m_folderSizeSlots[index].service.setChangedCallback([this, index] { folderSizeSlotChanged(index); });
+    m_folderSizeSlots[index].service.setNetworkFilesystemCheck(networkCheck);
+    m_folderSizeSlots[index].service.setSameDeviceOnly(true);
+  }
   updateMetadataPolicy();
 }
 
@@ -115,6 +130,27 @@ void luciole::BrowserController::setViewDefaults(ViewMode mode, int iconSize) {
   m_defaults.mode = mode;
   m_defaults.iconSize = iconSize;
 }
+void luciole::BrowserController::setDefaultSort(SortOptions sort) {
+  m_defaultSort = sort;
+  applyFolderView(false);
+}
+std::optional<luciole::FolderView> luciole::BrowserController::folderView() const {
+  if (m_folderViews == nullptr || m_history.empty()) {
+    return std::nullopt;
+  }
+  return m_folderViews->lookup(m_history[m_historyIndex].location);
+}
+void luciole::BrowserController::applyFolderView(bool viewMode) {
+  const auto view = folderView();
+  m_model.setSort(view && view->sort ? *view->sort : m_defaultSort);
+  if (!viewMode || m_history.empty() || m_defaults.mode == ViewMode::Miller) {
+    return;
+  }
+  const auto mode = view && view->mode ? *view->mode : m_defaults.mode;
+  m_viewport.mode = mode;
+  m_history[m_historyIndex].viewport.mode = mode;
+}
+void luciole::BrowserController::reapplyFolderView() { applyFolderView(true); }
 std::optional<luciole::BrowseViewport> luciole::BrowserController::takeRestoredViewport() {
   return std::exchange(m_restoredViewport, std::nullopt);
 }
@@ -152,6 +188,12 @@ void luciole::BrowserController::loadVisit() {
   const auto destination = m_history[m_historyIndex].location;
   const auto query = m_history[m_historyIndex].query;
   m_viewport = m_history[m_historyIndex].viewport;
+  if (folderView()) {
+    // The listing is replaced next, so the re-sort need not be published.
+    m_publishing = true;
+    applyFolderView(true);
+    m_publishing = false;
+  }
   m_restoredViewport.reset();
   m_restoring = true;
   ++m_visitSerial;
@@ -622,6 +664,7 @@ void luciole::BrowserController::publish(DirectorySnapshot snapshot) {
     ready.push_back(std::move(request));
     return true;
   });
+  syncFolderSizes();
   notify();
   for (auto& request : ready) {
     if (lifetime.expired()) {
@@ -634,8 +677,109 @@ void luciole::BrowserController::publish(DirectorySnapshot snapshot) {
 }
 
 void luciole::BrowserController::releaseLocation(const Location& root) {
+  // Before the tree drops expanded rows under root, so their walks are still found and cancelled.
+  releaseFolderSizesUnder(root);
   if (m_tree) {
     m_tree->releaseLocation(root);
+  }
+}
+
+bool luciole::BrowserController::folderSizeEligible(const DirectoryEntry& entry) const {
+  if (entry.type != FileType::Directory || entry.symlink) {
+    return false;
+  }
+  const auto location = entry.location();
+  return location.isNative() && !location.isTrash();
+}
+
+void luciole::BrowserController::requestFolderSize(EntryId id) {
+  const bool claimed = m_folderSizeCache.contains(id)
+      || std::ranges::contains(m_folderSizeQueue, id)
+      || std::ranges::any_of(m_folderSizeSlots, [id](const FolderSizeSlot& slot) {
+                         return slot.running && slot.id == id;
+                       });
+  if (claimed) {
+    return;
+  }
+  m_folderSizeQueue.push_back(id);
+  pumpFolderSizes();
+}
+
+const luciole::FolderTotalsSnapshot* luciole::BrowserController::folderSize(EntryId id) const {
+  const auto found = m_folderSizeCache.find(id);
+  return found == m_folderSizeCache.end() ? nullptr : &found->second.totals;
+}
+
+void luciole::BrowserController::syncFolderSizes() {
+  for (auto iterator = m_folderSizeCache.begin(); iterator != m_folderSizeCache.end();) {
+    const auto* entry = m_model.entry(iterator->first);
+    const auto& cached = iterator->second;
+    if (!entry || (cached.etag && (!entry->etag() || *entry->etag() != *cached.etag))) {
+      iterator = m_folderSizeCache.erase(iterator);
+    } else {
+      ++iterator;
+    }
+  }
+  for (auto& slot : m_folderSizeSlots) {
+    if (slot.running && slot.id != 0 && m_model.entry(slot.id) == nullptr) {
+      slot.id = 0;
+      slot.service.cancel();
+    }
+  }
+}
+
+void luciole::BrowserController::pumpFolderSizes() {
+  for (auto& slot : m_folderSizeSlots) {
+    while (!slot.running && !m_folderSizeQueue.empty()) {
+      const auto id = m_folderSizeQueue.back();
+      m_folderSizeQueue.pop_back();
+      const auto* entry = m_model.entry(id);
+      if (!entry || !folderSizeEligible(*entry)) {
+        continue;
+      }
+      const std::array<DirectoryEntry, 1> root{*entry};
+      slot.id = id;
+      slot.running = true;
+      (void)slot.service.start(root);
+    }
+  }
+}
+
+void luciole::BrowserController::folderSizeSlotChanged(std::size_t index) {
+  auto& slot = m_folderSizeSlots[index];
+  if (!slot.running) {
+    return;
+  }
+  const auto& totals = slot.service.snapshot();
+  if (totals.phase == FolderTotalsPhase::Running) {
+    return;
+  }
+  slot.running = false;
+  const bool cacheable = totals.phase == FolderTotalsPhase::Complete || totals.phase == FolderTotalsPhase::Unsupported;
+  if (cacheable && slot.id != 0) {
+    if (const auto* entry = m_model.entry(slot.id)) {
+      m_folderSizeCache.insert_or_assign(slot.id, FolderSizeCache{totals, entry->etag()});
+    }
+  }
+  slot.id = 0;
+  pumpFolderSizes();
+  notify();
+}
+
+void luciole::BrowserController::releaseFolderSizesUnder(const Location& root) {
+  std::erase_if(m_folderSizeCache, [this, &root](const auto& item) {
+    const auto* entry = m_model.entry(item.first);
+    return entry && locationWithin(entry->location().uri(), root);
+  });
+  for (auto& slot : m_folderSizeSlots) {
+    if (!slot.running || slot.id == 0) {
+      continue;
+    }
+    const auto* entry = m_model.entry(slot.id);
+    if (entry && locationWithin(entry->location().uri(), root)) {
+      slot.id = 0;
+      slot.service.cancel();
+    }
   }
 }
 
@@ -759,6 +903,8 @@ void luciole::BrowserController::duplicateFrom(BrowserController& source) {
     }
   }
   m_defaults = source.m_defaults;
+  m_defaultSort = source.m_defaultSort;
+  m_folderViews = source.m_folderViews;
   m_searchRecursive = source.m_searchRecursive;
   m_history = source.m_history;
   m_historyIndex = source.m_historyIndex;

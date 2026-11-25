@@ -47,6 +47,7 @@ if not cpp.has_header('stb/stb_image_resize2.h')
   error('system stb/stb_image_resize2.h is required')
 endif
 tomlplusplus = dependency('tomlplusplus', version: '>=3.4')
+xkbcommon = dependency('xkbcommon')
 
 if cpp.get_define('_LIBCPP_VERSION', prefix: '#include <version>') != ''
   add_project_arguments('-fexperimental-library', language: 'cpp')
@@ -161,6 +162,9 @@ fs_lib = static_library('luciole-fs',
     'src/fs/location_mount.cpp',
     'src/fs/mount_interaction.cpp',
     'src/fs/native_listing.cpp',
+    'src/fs/system_mounts.cpp',
+    'src/fs/systemd_mounts.cpp',
+    'src/fs/system_mount_monitor.cpp',
     'src/fs/network_listing.cpp',
     'src/fs/ws_discovery.cpp',
     'src/fs/ws_discovery_metadata.cpp',
@@ -173,13 +177,15 @@ fs_lib = static_library('luciole-fs',
     'src/fs/xdg_dirs.cpp',
   ),
   include_directories: src_inc,
-  dependencies: [gio, libarchive, liblzma, curl, xml],
+  dependencies: [gio, gio_unix, libarchive, liblzma, curl, xml],
 )
-fs_dep = declare_dependency(link_with: fs_lib, include_directories: src_inc, dependencies: [gio, libarchive, liblzma, curl, xml])
+fs_dep = declare_dependency(link_with: fs_lib, include_directories: src_inc, dependencies: [gio, gio_unix, libarchive, liblzma, curl, xml])
 
 config_lib = static_library('luciole-config',
   files(
     'src/config/diagnostic.cpp',
+    'src/config/folder_view_store.cpp',
+    'src/config/keybinds.cpp',
     'src/config/settings.cpp',
     'src/config/shared_bookmarks.cpp',
     'src/config/state_store.cpp',
@@ -187,10 +193,10 @@ config_lib = static_library('luciole-config',
     'src/config/view_preference_writer.cpp',
   ),
   include_directories: src_inc,
-  dependencies: [model_dep, fs_dep, tomlplusplus],
+  dependencies: [model_dep, fs_dep, tomlplusplus, xkbcommon],
 )
 config_dep = declare_dependency(link_with: config_lib, include_directories: src_inc,
-  dependencies: [model_dep, fs_dep],
+  dependencies: [model_dep, fs_dep, xkbcommon],
 )
 
 browser_lib = static_library('luciole-browser',
@@ -202,6 +208,7 @@ browser_lib = static_library('luciole-browser',
     'src/browser/directory_model.cpp',
     'src/browser/directory_tree.cpp',
     'src/browser/entry_details.cpp',
+    'src/browser/folder_views.cpp',
     'src/browser/selection_details.cpp',
     'src/browser/job_routing.cpp',
     'src/browser/location_presentation.cpp',
@@ -425,6 +432,7 @@ app = executable('luciole',
     'src/app/page/drag_drop_controller.cpp',
     'src/app/page/file_keyboard_controller.cpp',
     'src/app/page/folder_icon_controller.cpp',
+    'src/app/page/folder_view_controller.cpp',
     'src/app/page/location_bar_controller.cpp',
     'src/app/page/menu_controller.cpp',
     'src/app/page/mount_controller.cpp',
@@ -483,7 +491,6 @@ endif
 
 install_data('LICENSE', install_dir: get_option('datadir') / 'licenses/luciole')
 install_subdir(noctalia_ui_assets_dir / 'fonts', install_dir: get_option('datadir') / 'luciole/assets')
-install_data('assets/noctalia/colors.toml', install_dir: get_option('datadir') / 'luciole/templates')
 install_data('assets/completions/luciole.bash',
   install_dir: get_option('datadir') / 'bash-completion/completions',
   rename: 'luciole',
@@ -491,4 +498,5 @@ install_data('assets/completions/luciole.bash',
 install_data('assets/completions/_luciole', install_dir: get_option('datadir') / 'zsh/site-functions')
 install_data('assets/completions/luciole.fish', install_dir: get_option('datadir') / 'fish/vendor_completions.d')
 install_data('assets/desktop/dev.noctalia.luciole.desktop', install_dir: get_option('datadir') / 'applications')
+install_data('assets/desktop/dev.noctalia.luciole-chooser.desktop', install_dir: get_option('datadir') / 'applications')
 install_data('assets/icons/dev.noctalia.luciole.svg', install_dir: get_option('datadir') / 'icons/hicolor/scalable/apps')
