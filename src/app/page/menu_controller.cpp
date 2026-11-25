@@ -757,7 +757,7 @@ void MenuController::openColumnsMenu(const LayoutRect& anchor, std::optional<luc
          .label = std::string(luciole::detailsColumnLabel(candidate)),
          .checkmark = true,
          .toggleState = luciole::detailsColumnVisible(m_columns.columnVisibility(), candidate) ? 1 : 0,
-         .glyph = "columns"}
+         .glyph = std::string(luciole::detailsColumnGlyph(candidate))}
     );
   }
   entries.push_back({.label = "", .separator = true, .glyph = {}});

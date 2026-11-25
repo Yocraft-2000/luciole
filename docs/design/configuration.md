@@ -34,7 +34,7 @@ Plain single-line Middle text uses the shared renderer's compact layout. Pango s
 
 ## Context menu icons
 
-`browser.context_menu_icons` defaults to `true` and appears under Settings → Appearance. Action glyph names live beside each action in [ActionRegistry](../../src/browser/action_registry.cpp); one-off menus set the same `ContextMenuControlEntry::glyph` field. [MenuController](../../src/app/page/menu_controller.cpp) and [SubmenuController](../../src/app/page/submenu_controller.cpp) apply the preference with `applyContextMenuIconPreference()` before publishing entries. Disabling it removes the reserved leading column without changing entry ids, checkmarks, shortcuts or submenu behavior.
+`browser.context_menu_icons` defaults to `true` and appears under Settings → Appearance. Action glyph names live beside each action in [ActionRegistry](../../src/browser/action_registry.cpp), and sort actions reuse `sortFieldGlyph()` from [DirectoryOptions](../../src/model/directory_options.h) so the Sort and Columns menus agree; one-off menus set the same `ContextMenuControlEntry::glyph` field. [MenuController](../../src/app/page/menu_controller.cpp) and [SubmenuController](../../src/app/page/submenu_controller.cpp) apply the preference with `applyContextMenuIconPreference()` before publishing entries. Disabling it removes the reserved leading column without changing entry ids, checkmarks, shortcuts or submenu behavior.
 
 ## Atomic writes
 
