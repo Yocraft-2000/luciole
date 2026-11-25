@@ -296,7 +296,7 @@ void SidebarController::openDriveMenu(const std::string& key, float x, float y) 
   const bool canShowProperties = drive->root.has_value();
   if (canShowProperties) {
     entries.push_back({.label = "", .separator = true, .glyph = {}});
-    entries.push_back({.id = 3, .label = "Properties", .glyph = {}});
+    entries.push_back({.id = 3, .label = "Properties", .glyph = "info-circle"});
   }
   m_menus.showContextMenu(
       std::move(entries),
