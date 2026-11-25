@@ -202,14 +202,13 @@ void ProgramController::showScripts(
         {.label = loading    ? "Loading scripts…"
              : listing.error ? listing.error->message
                              : "No scripts installed",
-         .enabled = false,
-         .glyph = {}}
+         .enabled = false}
     );
   }
   if (listing.truncated) {
-    entries.push_back({.label = "Script list limit reached", .enabled = false, .glyph = {}});
+    entries.push_back({.label = "Script list limit reached", .enabled = false});
   }
-  entries.push_back({.label = "", .separator = true, .glyph = {}});
+  entries.push_back({.label = "", .separator = true});
   entries.push_back({.id = -1, .label = "Open Scripts Folder", .glyph = "folder-open"});
   m_submenus.show(
       std::move(entries),

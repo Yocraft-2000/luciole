@@ -1684,7 +1684,7 @@ void WorkspaceApplication::tabMenu(Host& host, luciole::TabId tab, float x, floa
        .label = "Reopen Closed Tab",
        .glyph = "history",
        .shortcut = luciole::keybindShortcutOptionalLabel(luciole::KeybindCommand::ReopenTab)},
-      {.label = "", .separator = true, .glyph = {}},
+      {.label = "", .separator = true},
       {.id = 4,
        .label = "Split View",
        .glyph = "columns",

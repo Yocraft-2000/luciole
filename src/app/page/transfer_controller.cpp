@@ -561,7 +561,7 @@ void TransferController::chooseDrop(
        .glyph = "file-import",
        .shortcut = "Shift"}
   );
-  entries.push_back({.label = "", .separator = true, .glyph = {}});
+  entries.push_back({.label = "", .separator = true});
   entries.push_back(
       {.id = kDropLink,
        .label = pending->payload.locations.size() == 1 ? "Create Link Here" : "Create Links Here",
@@ -576,7 +576,7 @@ void TransferController::chooseDrop(
   entries.push_back(
       {.id = kDropNewFolder, .label = "Move into New Folder…", .enabled = canNewFolder, .glyph = "folder-plus"}
   );
-  entries.push_back({.label = "", .separator = true, .glyph = {}});
+  entries.push_back({.label = "", .separator = true});
   entries.push_back({.id = kDropCancel, .label = "Cancel", .glyph = "x", .shortcut = "Esc"});
   m_page.showContextMenu(std::move(entries), choose, {pending->options.x, pending->options.y, 1.0F, 1.0F});
 }
